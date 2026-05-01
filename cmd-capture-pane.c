@@ -39,8 +39,8 @@ const struct cmd_entry cmd_capture_pane_entry = {
 	.name = "capture-pane",
 	.alias = "capturep",
 
-	.args = { "ab:CeE:JMNpPqS:Tt:", 0, 0, NULL },
-	.usage = "[-aCeJMNpPqT] " CMD_BUFFER_USAGE " [-E end-line] "
+	.args = { "ab:CeE:JLMNpPqS:Tt:", 0, 0, NULL },
+	.usage = "[-aCeJLMNpPqT] " CMD_BUFFER_USAGE " [-E end-line] "
 		 "[-S start-line] " CMD_TARGET_PANE_USAGE,
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -112,11 +112,12 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
 	struct screen			*s;
 	struct grid_cell		*gc = NULL;
 	struct window_mode_entry	*wme;
-	int				 n, join_lines, flags = 0;
+	int				 n, join_lines, line_numbers, flags = 0;
 	u_int				 i, sx, top, bottom, tmp;
 	char				*cause, *buf, *line;
 	const char			*Sflag, *Eflag;
 	size_t				 linelen;
+	char				 prefix[32];
 
 	sx = screen_size_x(&wp->base);
 	if (args_has(args, 'a')) {
@@ -184,6 +185,7 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
 	}
 
 	join_lines = args_has(args, 'J');
+	line_numbers = args_has(args, 'L');
 	if (args_has(args, 'e'))
 		flags |= GRID_STRING_WITH_SEQUENCES;
 	if (args_has(args, 'C'))
@@ -198,9 +200,15 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
 		line = grid_string_cells(gd, 0, i, sx, &gc, flags, s);
 		linelen = strlen(line);
 
+		gl = grid_peek_line(gd, i);
+		if (line_numbers) {
+			xsnprintf(prefix, sizeof prefix, "%llu\t",
+			    (unsigned long long)gl->line_number);
+			buf = cmd_capture_pane_append(buf, len, prefix,
+			    strlen(prefix));
+		}
 		buf = cmd_capture_pane_append(buf, len, line, linelen);
 
-		gl = grid_peek_line(gd, i);
 		if (!join_lines || !(gl->flags & GRID_LINE_WRAPPED))
 			buf[(*len)++] = '\n';
 
@@ -225,6 +233,14 @@ cmd_capture_pane_exec(struct cmd *self, struct cmdq_item *item)
 		if (args_has(args, 'H'))
 			screen_reset_hyperlinks(wp->screen);
 		return (CMD_RETURN_NORMAL);
+	}
+	if (args_has(args, 'L') && args_has(args, 'J')) {
+		cmdq_error(item, "-L and -J are incompatible");
+		return (CMD_RETURN_ERROR);
+	}
+	if (args_has(args, 'L') && args_has(args, 'P')) {
+		cmdq_error(item, "-L and -P are incompatible");
+		return (CMD_RETURN_ERROR);
 	}
 
 	len = 0;

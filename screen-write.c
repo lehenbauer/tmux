@@ -76,6 +76,47 @@ screen_write_free_citem(struct screen_write_citem *ci)
 	TAILQ_INSERT_TAIL(&screen_write_citem_freelist, ci, entry);
 }
 
+static int
+screen_write_line_number_enabled(struct screen_write_ctx *ctx)
+{
+	return (ctx->wp != NULL && ctx->s == &ctx->wp->base);
+}
+
+static void
+screen_write_assign_line_number(struct screen_write_ctx *ctx, u_int py,
+    int always)
+{
+	struct grid		*gd = ctx->s->grid;
+	struct grid_line	*gl;
+
+	if (!screen_write_line_number_enabled(ctx))
+		return;
+	if (py >= gd->sy)
+		return;
+
+	gl = grid_get_line(gd, gd->hsize + py);
+	if (always || gl->line_number == 0)
+		gl->line_number = ctx->wp->next_line_number++;
+}
+
+static void
+screen_write_assign_line_numbers(struct screen_write_ctx *ctx, u_int py,
+    u_int ny, int always)
+{
+	u_int	yy, end;
+
+	if (!screen_write_line_number_enabled(ctx) || ny == 0)
+		return;
+	if (py >= ctx->s->grid->sy)
+		return;
+
+	end = py + ny;
+	if (end > ctx->s->grid->sy)
+		end = ctx->s->grid->sy;
+	for (yy = py; yy < end; yy++)
+		screen_write_assign_line_number(ctx, yy, always);
+}
+
 static void
 screen_write_offset_timer(__unused int fd, __unused short events, void *data)
 {
@@ -1222,6 +1263,7 @@ screen_write_insertline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ttyctx.bg = bg;
 
 		grid_view_insert_lines(gd, s->cy, ny, bg);
+		screen_write_assign_line_numbers(ctx, s->cy, ny, 1);
 
 		screen_write_collect_flush(ctx, 0, __func__);
 		ttyctx.num = ny;
@@ -1241,6 +1283,7 @@ screen_write_insertline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		grid_view_insert_lines(gd, s->cy, ny, bg);
 	else
 		grid_view_insert_lines_region(gd, s->rlower, s->cy, ny, bg);
+	screen_write_assign_line_numbers(ctx, s->cy, ny, 1);
 
 	screen_write_collect_flush(ctx, 0, __func__);
 
@@ -1275,6 +1318,7 @@ screen_write_deleteline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ttyctx.bg = bg;
 
 		grid_view_delete_lines(gd, s->cy, ny, bg);
+		screen_write_assign_line_numbers(ctx, sy - ny, ny, 1);
 
 		screen_write_collect_flush(ctx, 0, __func__);
 		ttyctx.num = ny;
@@ -1294,6 +1338,7 @@ screen_write_deleteline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		grid_view_delete_lines(gd, s->cy, ny, bg);
 	else
 		grid_view_delete_lines_region(gd, s->rlower, s->cy, ny, bg);
+	screen_write_assign_line_numbers(ctx, s->rlower + 1 - ny, ny, 1);
 
 	screen_write_collect_flush(ctx, 0, __func__);
 	ttyctx.num = ny;
@@ -1428,6 +1473,7 @@ screen_write_reverseindex(struct screen_write_ctx *ctx, u_int bg)
 #endif
 
 		grid_view_scroll_region_down(s->grid, s->rupper, s->rlower, bg);
+		screen_write_assign_line_number(ctx, s->rupper, 1);
 		screen_write_collect_flush(ctx, 0, __func__);
 
 		screen_write_initctx(ctx, &ttyctx, 1);
@@ -1477,6 +1523,7 @@ screen_write_linefeed(struct screen_write_ctx *ctx, int wrapped, u_int bg)
 	gl = grid_get_line(gd, gd->hsize + s->cy);
 	if (wrapped)
 		gl->flags |= GRID_LINE_WRAPPED;
+	screen_write_assign_line_number(ctx, s->cy, 0);
 
 	log_debug("%s: at %u,%u (region %u-%u)", __func__, s->cx, s->cy,
 	    rupper, rlower);
@@ -1496,6 +1543,7 @@ screen_write_linefeed(struct screen_write_ctx *ctx, int wrapped, u_int bg)
 			ctx->wp->flags |= PANE_REDRAW;
 #endif
 		grid_view_scroll_region_up(gd, s->rupper, s->rlower, bg);
+		screen_write_assign_line_number(ctx, s->rlower, 1);
 		screen_write_collect_scroll(ctx, bg);
 		ctx->scrolled++;
 	} else if (s->cy < screen_size_y(s) - 1)
@@ -1527,6 +1575,7 @@ screen_write_scrollup(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 
 	for (i = 0; i < lines; i++) {
 		grid_view_scroll_region_up(gd, s->rupper, s->rlower, bg);
+		screen_write_assign_line_number(ctx, s->rlower, 1);
 		screen_write_collect_scroll(ctx, bg);
 	}
 	ctx->scrolled += lines;
@@ -1554,8 +1603,10 @@ screen_write_scrolldown(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
-	for (i = 0; i < lines; i++)
+	for (i = 0; i < lines; i++) {
 		grid_view_scroll_region_down(gd, s->rupper, s->rlower, bg);
+		screen_write_assign_line_number(ctx, s->rupper, 1);
+	}
 
 	screen_write_collect_flush(ctx, 0, __func__);
 	ttyctx.num = lines;
@@ -1919,6 +1970,8 @@ screen_write_collect_end(struct screen_write_ctx *ctx)
 	if (ci->used == 0)
 		return;
 
+	screen_write_assign_line_number(ctx, s->cy, 0);
+
 	ci->x = s->cx;
 	screen_write_collect_insert(ctx, ci);
 
@@ -2095,6 +2148,7 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 
 	/* Handle overwriting of UTF-8 characters. */
 	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
+	screen_write_assign_line_number(ctx, s->cy, 0);
 	if (gl->flags & GRID_LINE_EXTENDED) {
 		grid_view_get_cell(gd, s->cx, s->cy, &now_gc);
 		if (screen_write_overwrite(ctx, &now_gc, width)) {

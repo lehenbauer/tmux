@@ -2626,7 +2626,7 @@ but a different format may be specified with
 .Fl F .
 .Tg capturep
 .It Xo Ic capture\-pane
-.Op Fl aepPqCJMN
+.Op Fl aepPqCJLMN
 .Op Fl b Ar buffer\-name
 .Op Fl E Ar end\-line
 .Op Fl S Ar start\-line
@@ -2663,6 +2663,13 @@ preserves trailing spaces and joins any wrapped lines;
 .Fl J
 implies
 .Fl T .
+.Fl L
+prefixes each captured physical line with its immutable line number followed by a
+tab;
+it cannot be used with
+.Fl J
+or
+.Fl P .
 .Fl P
 captures only any output that the pane has received that is the beginning of an
 as-yet incomplete escape sequence.

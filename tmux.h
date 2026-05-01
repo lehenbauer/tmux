@@ -854,6 +854,7 @@ struct grid_line {
 	struct grid_extd_entry	*extddata;
 	u_int			 extdsize;
 
+	uint64_t		 line_number;
 	int			 flags;
 	time_t			 time;
 };
@@ -1234,6 +1235,7 @@ enum client_theme {
 struct window_pane {
 	u_int		 id;
 	u_int		 active_point;
+	uint64_t	 next_line_number;
 
 	struct window	*window;
 	struct options	*options;
