@@ -1049,6 +1049,7 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	wp->flags = PANE_STYLECHANGED;
 
 	wp->id = next_window_pane_id++;
+	wp->next_line_number = 1;
 	RB_INSERT(window_pane_tree, &all_window_panes, wp);
 
 	wp->fd = -1;
