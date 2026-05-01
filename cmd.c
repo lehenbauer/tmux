@@ -118,6 +118,7 @@ extern const struct cmd_entry cmd_switch_client_entry;
 extern const struct cmd_entry cmd_unbind_key_entry;
 extern const struct cmd_entry cmd_unlink_window_entry;
 extern const struct cmd_entry cmd_wait_for_entry;
+extern const struct cmd_entry cmd_whisp_capture_pane_entry;
 
 const struct cmd_entry *cmd_table[] = {
 	&cmd_attach_session_entry,
@@ -211,6 +212,7 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_unbind_key_entry,
 	&cmd_unlink_window_entry,
 	&cmd_wait_for_entry,
+	&cmd_whisp_capture_pane_entry,
 	NULL
 };
 

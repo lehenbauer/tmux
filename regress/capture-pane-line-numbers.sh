@@ -25,6 +25,23 @@ awk -F '	' '
 $TMUX capturep -p -S0 -E1 >$TMP || exit 1
 printf 'one\ntwo\n' | cmp -s - $TMP || exit 1
 
+$TMUX whisp-capture-pane -A 1 -n 2 >$TMP || exit 1
+awk '
+	NR == 1 { if ($0 != "cursor=2\tcount=1") exit 1 }
+	NR == 2 { if ($0 != "two") exit 1 }
+	END { if (NR != 2) exit 1 }
+' $TMP || exit 1
+
+$TMUX whisp-capture-pane -B 2 -n 1 >$TMP || exit 1
+awk '
+	NR == 1 { if ($0 != "cursor=1\tcount=1") exit 1 }
+	NR == 2 { if ($0 != "one") exit 1 }
+	END { if (NR != 2) exit 1 }
+' $TMP || exit 1
+
+$TMUX whisp-capture-pane -A 2 -n 10 >$TMP || exit 1
+test ! -s $TMP || exit 1
+
 $TMUX kill-server 2>/dev/null
 $TMUX -f/dev/null new -d -x20 -y5 'printf "left\n"; sleep 5' || exit 1
 $TMUX splitw -d 'printf "right\n"; sleep 5' || exit 1
@@ -67,6 +84,12 @@ awk -F '	' '
 	{ previous = $1; count++ }
 	END { if (count < 3) exit 1 }
 ' $TMP || exit 1
+
+$TMUX whisp-capture-pane -A 1 -n 1 >$TMP 2>&1 && exit 1
+grep -- 'line number 1 not available' $TMP >/dev/null || exit 1
+
+$TMUX whisp-capture-pane -q -A 1 -n 1 >$TMP || exit 1
+test ! -s $TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 exit 0
