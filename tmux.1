@@ -2686,6 +2686,47 @@ is the start of the history and to
 .Fl E
 the end of the visible pane.
 The default is to capture only the visible contents of the pane.
+.Tg whisp-capture-pane
+.It Xo Ic whisp\-capture\-pane
+.Op Fl CeNqT
+.Oo Fl A Ar after\-line | Fl B Ar before\-line Oc
+.Fl n Ar lines
+.Op Fl t Ar target\-pane
+.Xc
+Capture pane lines using immutable line numbers.
+Exactly one of
+.Fl A
+or
+.Fl B
+must be specified.
+.Fl A
+captures up to
+.Ar lines
+lines after immutable line number
+.Ar after\-line ,
+excluding the requested line.
+.Fl B
+captures up to
+.Ar lines
+lines before immutable line number
+.Ar before\-line ,
+excluding the requested line, in display order.
+If lines are returned, the first output line is metadata in the form
+.Ql cursor=<line-number>\etcount=<lines> .
+The cursor is the immutable line number to use as the anchor for the next
+request in the same direction.
+The remaining output lines are the captured pane rows.
+If the requested line number is not present in the retained history or visible
+pane, an error is returned unless
+.Fl q
+is given, in which case no output is produced.
+.Fl e ,
+.Fl C ,
+.Fl T ,
+and
+.Fl N
+have the same meaning as for
+.Ic capture\-pane .
 .It Xo
 .Ic choose\-client
 .Op Fl NryZ

@@ -854,9 +854,9 @@ struct grid_line {
 	struct grid_extd_entry	*extddata;
 	u_int			 extdsize;
 
-	uint64_t		 line_number;
 	int			 flags;
 	time_t			 time;
+	uint64_t		 line_number;
 };
 
 /* Entire grid of cells. */

@@ -88,6 +88,7 @@ dist_tmux_SOURCES = \
 	cmd-bind-key.c \
 	cmd-break-pane.c \
 	cmd-capture-pane.c \
+	cmd-whisp-capture-pane.c \
 	cmd-choose-tree.c \
 	cmd-command-prompt.c \
 	cmd-confirm-before.c \
