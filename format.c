@@ -2035,6 +2035,25 @@ format_cb_pane_active(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for pane_activity. */
+static void *
+format_cb_pane_activity(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (&ft->wp->pane_activity);
+	return (NULL);
+}
+
+/* Callback for pane_activity_seq. */
+static void *
+format_cb_pane_activity_seq(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->pane_activity_seq));
+	return (NULL);
+}
+
 /* Callback for pane_at_left. */
 static void *
 format_cb_pane_at_left(struct format_tree *ft)
@@ -2265,6 +2284,16 @@ format_cb_pane_mode(struct format_tree *ft)
 			return (xstrdup(wme->mode->name));
 		return (NULL);
 	}
+	return (NULL);
+}
+
+/* Callback for pane_output_bytes. */
+static void *
+format_cb_pane_output_bytes(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->pane_output_bytes));
 	return (NULL);
 }
 
@@ -3401,6 +3430,12 @@ static const struct format_table_entry format_table[] = {
 	{ "pane_active", FORMAT_TABLE_STRING,
 	  format_cb_pane_active
 	},
+	{ "pane_activity", FORMAT_TABLE_TIME,
+	  format_cb_pane_activity
+	},
+	{ "pane_activity_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_activity_seq
+	},
 	{ "pane_at_bottom", FORMAT_TABLE_STRING,
 	  format_cb_pane_at_bottom
 	},
@@ -3481,6 +3516,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "pane_mode", FORMAT_TABLE_STRING,
 	  format_cb_pane_mode
+	},
+	{ "pane_output_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_output_bytes
 	},
 	{ "pane_path", FORMAT_TABLE_STRING,
 	  format_cb_pane_path
