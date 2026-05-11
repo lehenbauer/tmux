@@ -1029,7 +1029,7 @@ input_parse_buffer(struct window_pane *wp, const u_char *buf, size_t len)
 	if (len == 0)
 		return;
 
-	window_update_activity(wp->window);
+	window_pane_update_activity(wp, len);
 	wp->flags |= PANE_CHANGED;
 
 	/* Flag new input while in a mode. */

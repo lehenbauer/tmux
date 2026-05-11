@@ -1236,6 +1236,9 @@ struct window_pane {
 	u_int		 id;
 	u_int		 active_point;
 	uint64_t	 next_line_number;
+	struct timeval	 pane_activity;
+	uint64_t	 pane_activity_seq;
+	uint64_t	 pane_output_bytes;
 
 	struct window	*window;
 	struct options	*options;
@@ -3383,6 +3386,7 @@ void		 winlink_stack_remove(struct winlink_stack *, struct winlink *);
 struct window	*window_find_by_id_str(const char *);
 struct window	*window_find_by_id(u_int);
 void		 window_update_activity(struct window *);
+void		 window_pane_update_activity(struct window_pane *, size_t);
 struct window	*window_create(u_int, u_int, u_int, u_int);
 void		 window_pane_set_event(struct window_pane *);
 struct window_pane *window_get_active_at(struct window *, u_int, u_int);
