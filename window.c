@@ -291,6 +291,19 @@ window_update_activity(struct window *w)
 	alerts_queue(w, WINDOW_ACTIVITY);
 }
 
+void
+window_pane_update_activity(struct window_pane *wp, size_t bytes)
+{
+	if (bytes == 0)
+		return;
+
+	gettimeofday(&wp->pane_activity, NULL);
+	wp->pane_activity_seq++;
+	wp->pane_output_bytes += bytes;
+	wp->window->activity_time = wp->pane_activity;
+	alerts_queue(wp->window, WINDOW_ACTIVITY);
+}
+
 struct window *
 window_create(u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 {
