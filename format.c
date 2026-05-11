@@ -2728,6 +2728,13 @@ format_cb_version(__unused struct format_tree *ft)
 	return (xstrdup(getversion()));
 }
 
+/* Callback for whisp_tmux_protocol_version. */
+static void *
+format_cb_whisp_tmux_protocol_version(__unused struct format_tree *ft)
+{
+	return (format_printf("%u", WHISP_TMUX_PROTOCOL_VERSION));
+}
+
 /* Callback for sixel_support. */
 static void *
 format_cb_sixel_support(__unused struct format_tree *ft)
@@ -3696,6 +3703,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "version", FORMAT_TABLE_STRING,
 	  format_cb_version
+	},
+	{ "whisp_tmux_protocol_version", FORMAT_TABLE_STRING,
+	  format_cb_whisp_tmux_protocol_version
 	},
 	{ "window_active", FORMAT_TABLE_STRING,
 	  format_cb_window_active
