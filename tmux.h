@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 3
+#define WHISP_TMUX_PROTOCOL_VERSION 4
 
 extern char   **environ;
 
@@ -1227,6 +1227,12 @@ struct window_pane_resize {
 };
 TAILQ_HEAD(window_pane_resizes, window_pane_resize);
 
+enum whisp_shell_state {
+	WHISP_SHELL_UNKNOWN,
+	WHISP_SHELL_RUNNING,
+	WHISP_SHELL_IDLE
+};
+
 /*
  * Client theme, this is worked out from the background colour if not reported
  * by terminal.
@@ -1258,6 +1264,16 @@ struct window_pane {
 	struct timeval	 pane_activity;
 	uint64_t	 pane_activity_seq;
 	uint64_t	 pane_output_bytes;
+	enum whisp_shell_state whisp_shell_state;
+	uint64_t	 whisp_shell_seq;
+	pid_t		 whisp_shell_pid;
+	int		 whisp_shell_status;
+	int		 whisp_shell_have_status;
+	struct timeval	 whisp_shell_started_at;
+	struct timeval	 whisp_shell_finished_at;
+	uint64_t	 whisp_shell_duration_ms;
+	char		*whisp_shell_command;
+	char		*whisp_shell_cwd;
 
 	struct window	*window;
 	struct options	*options;
@@ -3686,6 +3702,7 @@ void	control_notify_session_closed(struct session *);
 void	control_notify_session_window_changed(struct session *);
 void	control_notify_paste_buffer_changed(const char *);
 void	control_notify_paste_buffer_deleted(const char *);
+void	control_notify_whisp_shell_event(struct window_pane *);
 
 /* session.c */
 extern struct sessions sessions;

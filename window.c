@@ -1141,6 +1141,8 @@ window_pane_destroy(struct window_pane *wp)
 	options_free(wp->options);
 	free((void *)wp->cwd);
 	free(wp->shell);
+	free(wp->whisp_shell_command);
+	free(wp->whisp_shell_cwd);
 	cmd_free_argv(wp->argc, wp->argv);
 	colour_palette_free(&wp->palette);
 	style_ranges_free(&wp->border_status_line.ranges);
