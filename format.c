@@ -2291,6 +2291,259 @@ format_cb_pane_output_bytes(struct format_tree *ft)
 	return (NULL);
 }
 
+static const char *
+format_whisp_shell_state_string(enum whisp_shell_state state)
+{
+	switch (state) {
+	case WHISP_SHELL_RUNNING:
+		return ("running");
+	case WHISP_SHELL_IDLE:
+		return ("idle");
+	case WHISP_SHELL_UNKNOWN:
+		break;
+	}
+	return ("unknown");
+}
+
+static uint64_t
+format_whisp_time_ms(const struct timeval *tv)
+{
+	if (tv->tv_sec == 0 && tv->tv_usec == 0)
+		return (0);
+	return ((uint64_t)tv->tv_sec * 1000 + (uint64_t)(tv->tv_usec / 1000));
+}
+
+static void
+format_whisp_json_string(struct evbuffer *buffer, const char *value)
+{
+	const u_char	*cp = (const u_char *)value;
+
+	evbuffer_add(buffer, "\"", 1);
+	if (value != NULL) {
+		for (; *cp != '\0'; cp++) {
+			switch (*cp) {
+			case '"':
+				evbuffer_add(buffer, "\\\"", 2);
+				break;
+			case '\\':
+				evbuffer_add(buffer, "\\\\", 2);
+				break;
+			case '\b':
+				evbuffer_add(buffer, "\\b", 2);
+				break;
+			case '\f':
+				evbuffer_add(buffer, "\\f", 2);
+				break;
+			case '\n':
+				evbuffer_add(buffer, "\\n", 2);
+				break;
+			case '\r':
+				evbuffer_add(buffer, "\\r", 2);
+				break;
+			case '\t':
+				evbuffer_add(buffer, "\\t", 2);
+				break;
+			default:
+				if (*cp < 0x20)
+					evbuffer_add_printf(buffer, "\\u%04x", *cp);
+				else
+					evbuffer_add(buffer, cp, 1);
+				break;
+			}
+		}
+	}
+	evbuffer_add(buffer, "\"", 1);
+}
+
+static void
+format_whisp_json_string_field(struct evbuffer *buffer, const char *name,
+    const char *value)
+{
+	format_whisp_json_string(buffer, name);
+	evbuffer_add(buffer, ":", 1);
+	format_whisp_json_string(buffer, value);
+}
+
+static void
+format_whisp_shell_json(struct evbuffer *buffer, struct window_pane *wp)
+{
+	uint64_t	started_at_ms, finished_at_ms;
+
+	started_at_ms = format_whisp_time_ms(&wp->whisp_shell_started_at);
+	finished_at_ms = format_whisp_time_ms(&wp->whisp_shell_finished_at);
+
+	evbuffer_add_printf(buffer, "{\"supported\":true,\"state\":");
+	format_whisp_json_string(buffer,
+	    format_whisp_shell_state_string(wp->whisp_shell_state));
+	evbuffer_add_printf(buffer, ",\"seq\":%llu",
+	    (unsigned long long)wp->whisp_shell_seq);
+	if (wp->whisp_shell_pid > 0)
+		evbuffer_add_printf(buffer, ",\"pid\":%ld",
+		    (long)wp->whisp_shell_pid);
+	if (wp->whisp_shell_command != NULL) {
+		evbuffer_add(buffer, ",", 1);
+		format_whisp_json_string_field(buffer, "command",
+		    wp->whisp_shell_command);
+	}
+	if (wp->whisp_shell_cwd != NULL) {
+		evbuffer_add(buffer, ",", 1);
+		format_whisp_json_string_field(buffer, "cwd",
+		    wp->whisp_shell_cwd);
+	}
+	if (started_at_ms != 0)
+		evbuffer_add_printf(buffer, ",\"started_at_ms\":%llu",
+		    (unsigned long long)started_at_ms);
+	if (finished_at_ms != 0)
+		evbuffer_add_printf(buffer, ",\"finished_at_ms\":%llu",
+		    (unsigned long long)finished_at_ms);
+	if (wp->whisp_shell_have_status)
+		evbuffer_add_printf(buffer, ",\"status\":%d",
+		    wp->whisp_shell_status);
+	if (wp->whisp_shell_duration_ms != 0)
+		evbuffer_add_printf(buffer, ",\"duration_ms\":%llu",
+		    (unsigned long long)wp->whisp_shell_duration_ms);
+	evbuffer_add(buffer, "}", 1);
+}
+
+static void *
+format_cb_whisp_shell_status_json(struct format_tree *ft)
+{
+	struct evbuffer		*buffer;
+	char			*value;
+	int			 size;
+
+	if (ft->wp == NULL)
+		return (NULL);
+	buffer = evbuffer_new();
+	if (buffer == NULL)
+		fatalx("out of memory");
+	format_whisp_shell_json(buffer, ft->wp);
+	size = EVBUFFER_LENGTH(buffer);
+	xasprintf(&value, "%.*s", size, EVBUFFER_DATA(buffer));
+	evbuffer_free(buffer);
+	return (value);
+}
+
+static void *
+format_cb_whisp_pane_status_json(struct format_tree *ft)
+{
+	struct window_pane	*wp = ft->wp;
+	struct evbuffer		*buffer;
+	char			*value, *current_command;
+	int			 size;
+	u_int			 pane_index;
+
+	if (wp == NULL)
+		return (NULL);
+
+	current_command = format_cb_current_command(ft);
+	buffer = evbuffer_new();
+	if (buffer == NULL)
+		fatalx("out of memory");
+
+	evbuffer_add_printf(buffer, "{\"pane_id\":\"%%%u\"", wp->id);
+	evbuffer_add_printf(buffer, ",\"activity_seq\":%llu",
+	    (unsigned long long)wp->pane_activity_seq);
+	evbuffer_add_printf(buffer, ",\"activity_time\":%lld",
+	    (long long)wp->pane_activity.tv_sec);
+	evbuffer_add_printf(buffer, ",\"pane_output_bytes\":%llu",
+	    (unsigned long long)wp->pane_output_bytes);
+	evbuffer_add(buffer, ",", 1);
+	format_whisp_json_string_field(buffer, "session_name",
+	    ft->s != NULL ? ft->s->name : "");
+	evbuffer_add_printf(buffer, ",\"window_id\":\"@%u\"", wp->window->id);
+	if (window_pane_index(wp, &pane_index) == 0)
+		evbuffer_add_printf(buffer, ",\"pane_index\":%u", pane_index);
+	else
+		evbuffer_add_printf(buffer, ",\"pane_index\":null");
+	evbuffer_add_printf(buffer, ",\"pane_pid\":%ld", (long)wp->pid);
+	if (current_command != NULL) {
+		evbuffer_add(buffer, ",", 1);
+		format_whisp_json_string_field(buffer, "current_command",
+		    current_command);
+	}
+	evbuffer_add(buffer, ",", 1);
+	format_whisp_json_string_field(buffer, "pane_title", wp->base.title);
+	evbuffer_add_printf(buffer, ",\"shell\":");
+	format_whisp_shell_json(buffer, wp);
+	evbuffer_add(buffer, "}", 1);
+
+	size = EVBUFFER_LENGTH(buffer);
+	xasprintf(&value, "%.*s", size, EVBUFFER_DATA(buffer));
+	evbuffer_free(buffer);
+	free(current_command);
+	return (value);
+}
+
+static void *
+format_cb_whisp_shell_command(struct format_tree *ft)
+{
+	if (ft->wp != NULL && ft->wp->whisp_shell_command != NULL)
+		return (xstrdup(ft->wp->whisp_shell_command));
+	return (xstrdup(""));
+}
+
+static void *
+format_cb_whisp_shell_cwd(struct format_tree *ft)
+{
+	if (ft->wp != NULL && ft->wp->whisp_shell_cwd != NULL)
+		return (xstrdup(ft->wp->whisp_shell_cwd));
+	return (xstrdup(""));
+}
+
+static void *
+format_cb_whisp_shell_duration_ms(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->whisp_shell_duration_ms));
+	return (NULL);
+}
+
+static void *
+format_cb_whisp_shell_finished_at(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu", (unsigned long long)
+		    format_whisp_time_ms(&ft->wp->whisp_shell_finished_at)));
+	return (NULL);
+}
+
+static void *
+format_cb_whisp_shell_seq(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->whisp_shell_seq));
+	return (NULL);
+}
+
+static void *
+format_cb_whisp_shell_started_at(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu", (unsigned long long)
+		    format_whisp_time_ms(&ft->wp->whisp_shell_started_at)));
+	return (NULL);
+}
+
+static void *
+format_cb_whisp_shell_state(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (xstrdup(format_whisp_shell_state_string(
+		    ft->wp->whisp_shell_state)));
+	return (NULL);
+}
+
+static void *
+format_cb_whisp_shell_status(struct format_tree *ft)
+{
+	if (ft->wp != NULL && ft->wp->whisp_shell_have_status)
+		return (format_printf("%d", ft->wp->whisp_shell_status));
+	return (xstrdup(""));
+}
+
 /* Callback for pane_path. */
 static void *
 format_cb_pane_path(struct format_tree *ft)
@@ -3657,6 +3910,36 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "version", FORMAT_TABLE_STRING,
 	  format_cb_version
+	},
+	{ "whisp_pane_status_json", FORMAT_TABLE_STRING,
+	  format_cb_whisp_pane_status_json
+	},
+	{ "whisp_shell_command", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_command
+	},
+	{ "whisp_shell_cwd", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_cwd
+	},
+	{ "whisp_shell_duration_ms", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_duration_ms
+	},
+	{ "whisp_shell_finished_at", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_finished_at
+	},
+	{ "whisp_shell_seq", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_seq
+	},
+	{ "whisp_shell_started_at", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_started_at
+	},
+	{ "whisp_shell_state", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_state
+	},
+	{ "whisp_shell_status", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_status
+	},
+	{ "whisp_shell_status_json", FORMAT_TABLE_STRING,
+	  format_cb_whisp_shell_status_json
 	},
 	{ "whisp_tmux_protocol_version", FORMAT_TABLE_STRING,
 	  format_cb_whisp_tmux_protocol_version

@@ -6540,6 +6540,16 @@ The following variables are available, where appropriate:
 .It Li "uid" Ta "" Ta "Server UID"
 .It Li "user" Ta "" Ta "Server user"
 .It Li "version" Ta "" Ta "Server version"
+.It Li "whisp_pane_status_json" Ta "" Ta "Whisp pane status as JSON"
+.It Li "whisp_shell_command" Ta "" Ta "Whisp shell command"
+.It Li "whisp_shell_cwd" Ta "" Ta "Whisp shell working directory"
+.It Li "whisp_shell_duration_ms" Ta "" Ta "Whisp shell command duration in milliseconds"
+.It Li "whisp_shell_finished_at" Ta "" Ta "Whisp shell finish time in epoch milliseconds"
+.It Li "whisp_shell_seq" Ta "" Ta "Whisp shell event sequence"
+.It Li "whisp_shell_started_at" Ta "" Ta "Whisp shell start time in epoch milliseconds"
+.It Li "whisp_shell_state" Ta "" Ta "Whisp shell state"
+.It Li "whisp_shell_status" Ta "" Ta "Whisp shell exit status"
+.It Li "whisp_shell_status_json" Ta "" Ta "Whisp shell status as JSON"
 .It Li "whisp_tmux_protocol_version" Ta "" Ta "Whisp tmux protocol version"
 .It Li "window_active" Ta "" Ta "1 if window active"
 .It Li "window_active_clients" Ta "" Ta "Number of clients viewing this window"
@@ -8100,6 +8110,11 @@ has been deleted.
 The pane has been paused (if the
 .Ar pause\-after
 flag is set).
+.It Ic %whisp\-shell\-event Ar pane\-id Ar seq
+The Whisp shell telemetry state for
+.Ar pane\-id
+changed to sequence
+.Ar seq .
 .It Ic %session\-changed Ar session\-id Ar name
 The client is now attached to the session with ID
 .Ar session\-id ,

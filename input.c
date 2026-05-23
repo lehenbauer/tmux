@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 
 #include <ctype.h>
+#include <limits.h>
 #include <resolv.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3120,6 +3121,267 @@ input_osc_112(struct input_ctx *ictx, const char *p)
 		screen_set_cursor_colour(ictx->ctx.s, -1);
 }
 
+struct input_whisp_shell_event {
+	char		*event;
+	char		*command;
+	char		*cwd;
+	uint64_t	 seq;
+	pid_t		 pid;
+	int		 status;
+	int		 have_pid;
+	int		 have_status;
+};
+
+static int
+input_whisp_hex(char ch)
+{
+	if (ch >= '0' && ch <= '9')
+		return (ch - '0');
+	if (ch >= 'a' && ch <= 'f')
+		return (ch - 'a' + 10);
+	if (ch >= 'A' && ch <= 'F')
+		return (ch - 'A' + 10);
+	return (-1);
+}
+
+static char *
+input_whisp_decode_value(const char *value)
+{
+	const char	*cp;
+	char		*out, *outp;
+	int		 hi, lo;
+	u_char		 ch;
+	size_t		 len;
+
+	len = strlen(value);
+	out = xmalloc(len + 1);
+	outp = out;
+	for (cp = value; *cp != '\0'; cp++) {
+		if (*cp != '%') {
+			*outp++ = *cp;
+			continue;
+		}
+		if (cp[1] == '\0' || cp[2] == '\0') {
+			free(out);
+			return (NULL);
+		}
+		hi = input_whisp_hex(cp[1]);
+		lo = input_whisp_hex(cp[2]);
+		if (hi == -1 || lo == -1) {
+			free(out);
+			return (NULL);
+		}
+		ch = (u_char)((hi << 4)|lo);
+		if (ch == '\0') {
+			free(out);
+			return (NULL);
+		}
+		*outp++ = ch;
+		cp += 2;
+	}
+	*outp = '\0';
+	return (out);
+}
+
+static int
+input_whisp_parse_uint64(const char *value, uint64_t *out)
+{
+	const char	*errstr;
+	long long	 parsed;
+
+	parsed = strtonum(value, 0, LLONG_MAX, &errstr);
+	if (errstr != NULL)
+		return (-1);
+	*out = (uint64_t)parsed;
+	return (0);
+}
+
+static int
+input_whisp_parse_int(const char *value, int *out)
+{
+	const char	*errstr;
+	long long	 parsed;
+
+	parsed = strtonum(value, INT_MIN, INT_MAX, &errstr);
+	if (errstr != NULL)
+		return (-1);
+	*out = (int)parsed;
+	return (0);
+}
+
+static void
+input_whisp_free_shell_event(struct input_whisp_shell_event *event)
+{
+	free(event->event);
+	free(event->command);
+	free(event->cwd);
+}
+
+static int
+input_whisp_parse_shell_event(const char *payload,
+    struct input_whisp_shell_event *event)
+{
+	char	*copy, *next, *field, *equals, *decoded;
+	int	 status;
+
+	memset(event, 0, sizeof *event);
+	copy = xstrdup(payload);
+	next = copy;
+	status = -1;
+	while ((field = strsep(&next, ";")) != NULL) {
+		if (*field == '\0')
+			continue;
+		equals = strchr(field, '=');
+		if (equals == NULL)
+			goto out;
+		*equals++ = '\0';
+		decoded = input_whisp_decode_value(equals);
+		if (decoded == NULL)
+			goto out;
+
+		if (strcmp(field, "event") == 0) {
+			free(event->event);
+			event->event = decoded;
+			continue;
+		}
+		if (strcmp(field, "cmd") == 0) {
+			free(event->command);
+			event->command = decoded;
+			continue;
+		}
+		if (strcmp(field, "cwd") == 0) {
+			free(event->cwd);
+			event->cwd = decoded;
+			continue;
+		}
+		if (strcmp(field, "seq") == 0) {
+			if (input_whisp_parse_uint64(decoded, &event->seq) != 0) {
+				free(decoded);
+				goto out;
+			}
+		} else if (strcmp(field, "pid") == 0) {
+			int pid;
+
+			if (input_whisp_parse_int(decoded, &pid) != 0 || pid < 0) {
+				free(decoded);
+				goto out;
+			}
+			event->pid = (pid_t)pid;
+			event->have_pid = 1;
+		} else if (strcmp(field, "status") == 0) {
+			if (input_whisp_parse_int(decoded, &event->status) != 0) {
+				free(decoded);
+				goto out;
+			}
+			event->have_status = 1;
+		}
+		free(decoded);
+	}
+	if (event->event != NULL)
+		status = 0;
+
+out:
+	free(copy);
+	if (status != 0)
+		input_whisp_free_shell_event(event);
+	return (status);
+}
+
+static uint64_t
+input_whisp_timeval_diff_ms(const struct timeval *start,
+    const struct timeval *finish)
+{
+	time_t	 seconds;
+	suseconds_t useconds;
+
+	if (finish->tv_sec < start->tv_sec ||
+	    (finish->tv_sec == start->tv_sec &&
+	    finish->tv_usec < start->tv_usec))
+		return (0);
+	seconds = finish->tv_sec - start->tv_sec;
+	useconds = finish->tv_usec - start->tv_usec;
+	if (useconds < 0) {
+		seconds--;
+		useconds += 1000000;
+	}
+	return ((uint64_t)seconds * 1000 + (uint64_t)(useconds / 1000));
+}
+
+static void
+input_whisp_replace_string(char **target, char *value)
+{
+	if (value == NULL)
+		return;
+	free(*target);
+	*target = value;
+}
+
+static void
+input_whisp_apply_shell_event(struct window_pane *wp,
+    struct input_whisp_shell_event *event)
+{
+	struct timeval	now;
+	int		is_start, is_finish, is_prompt;
+
+	is_start = strcmp(event->event, "start") == 0;
+	is_finish = strcmp(event->event, "finish") == 0;
+	is_prompt = strcmp(event->event, "prompt") == 0;
+	if (!is_start && !is_finish && !is_prompt)
+		return;
+
+	gettimeofday(&now, NULL);
+	if (event->seq != 0)
+		wp->whisp_shell_seq = event->seq;
+	else
+		wp->whisp_shell_seq++;
+	if (event->have_pid)
+		wp->whisp_shell_pid = event->pid;
+
+	if (is_start) {
+		wp->whisp_shell_state = WHISP_SHELL_RUNNING;
+		wp->whisp_shell_started_at = now;
+		memset(&wp->whisp_shell_finished_at, 0,
+		    sizeof wp->whisp_shell_finished_at);
+		wp->whisp_shell_duration_ms = 0;
+		wp->whisp_shell_have_status = 0;
+		input_whisp_replace_string(&wp->whisp_shell_command,
+		    event->command);
+		event->command = NULL;
+		input_whisp_replace_string(&wp->whisp_shell_cwd, event->cwd);
+		event->cwd = NULL;
+	} else {
+		wp->whisp_shell_state = WHISP_SHELL_IDLE;
+		wp->whisp_shell_finished_at = now;
+		if (event->have_status) {
+			wp->whisp_shell_status = event->status;
+			wp->whisp_shell_have_status = 1;
+		}
+		if (wp->whisp_shell_started_at.tv_sec != 0 ||
+		    wp->whisp_shell_started_at.tv_usec != 0) {
+			wp->whisp_shell_duration_ms = input_whisp_timeval_diff_ms(
+			    &wp->whisp_shell_started_at,
+			    &wp->whisp_shell_finished_at);
+		}
+		input_whisp_replace_string(&wp->whisp_shell_cwd, event->cwd);
+		event->cwd = NULL;
+	}
+	control_notify_whisp_shell_event(wp);
+}
+
+static void
+input_osc_133_whisp(struct input_ctx *ictx, const char *p)
+{
+	struct window_pane		*wp = ictx->wp;
+	struct input_whisp_shell_event	 event;
+
+	if (wp == NULL)
+		return;
+	if (input_whisp_parse_shell_event(p, &event) != 0)
+		return;
+	input_whisp_apply_shell_event(wp, &event);
+	input_whisp_free_shell_event(&event);
+}
+
 /* Handle the OSC 133 sequence. */
 static void
 input_osc_133(struct input_ctx *ictx, const char *p)
@@ -3127,6 +3389,11 @@ input_osc_133(struct input_ctx *ictx, const char *p)
 	struct grid		*gd = ictx->ctx.s->grid;
 	u_int			 line = ictx->ctx.s->cy + gd->hsize;
 	struct grid_line	*gl;
+
+	if (strncmp(p, "Whisp;", 6) == 0) {
+		input_osc_133_whisp(ictx, p + 6);
+		return;
+	}
 
 	if (line > gd->hsize + gd->sy - 1)
 		return;
