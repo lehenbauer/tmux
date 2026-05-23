@@ -3944,6 +3944,30 @@ also lists only keys in
 specifies a prefix to print before each key.
 .Fl a
 lists the command for keys that do not have a note rather than skipping them.
+.Tg search-history
+.It Xo Ic search\-history
+.Op Fl ir
+.Op Fl F Ar format
+.Ar match\-string
+.Xc
+Search for
+.Ar match\-string
+in the retained history and visible content of all panes on the server.
+One line is printed for each matching pane.
+.Fl i
+ignores case and
+.Fl r
+treats
+.Ar match\-string
+as an extended regular expression.
+.Fl F
+specifies the format of each line; see the
+.Sx FORMATS
+section.
+If no format is given, the default is:
+.Bd -literal -offset indent
+#{session_id}\et#{session_name}\et#{window_id}\et#{window_index}\et#{window_name}\et#{pane_id}\et#{pane_index}\et#{pane_title}\et#{match_count}\et#{matching_line_count}\et#{first_match_line}\et#{last_match_line}\et#{retained_first_line}\et#{retained_last_line}
+.Ed
 .Tg send
 .It Xo Ic send\-keys
 .Op Fl FHKlMRX
@@ -6366,6 +6390,7 @@ The following variables are available, where appropriate:
 .It Li "cursor_very_visible" Ta "" Ta "1 if the cursor is in very visible mode"
 .It Li "cursor_x" Ta "" Ta "Cursor X position in pane"
 .It Li "cursor_y" Ta "" Ta "Cursor Y position in pane"
+.It Li "first_match_line" Ta "" Ta "First matching line number from search-history"
 .It Li "history_bytes" Ta "" Ta "Number of bytes in window history"
 .It Li "history_limit" Ta "" Ta "Maximum window history lines"
 .It Li "history_size" Ta "" Ta "Size of history in lines"
@@ -6391,8 +6416,11 @@ The following variables are available, where appropriate:
 .It Li "keypad_cursor_flag" Ta "" Ta "Pane keypad cursor flag"
 .It Li "keypad_flag" Ta "" Ta "Pane keypad flag"
 .It Li "last_window_index" Ta "" Ta "Index of last window in session"
+.It Li "last_match_line" Ta "" Ta "Last matching line number from search-history"
 .It Li "line" Ta "" Ta "Line number in the list"
 .It Li "loop_last_flag" Ta "" Ta "1 if last window, pane, session, client in the W:, P:, S:, or L: loop"
+.It Li "match_count" Ta "" Ta "Count of matches from search-history"
+.It Li "matching_line_count" Ta "" Ta "Count of matching lines from search-history"
 .It Li "mouse_all_flag" Ta "" Ta "Pane mouse all flag"
 .It Li "mouse_any_flag" Ta "" Ta "Pane mouse any flag"
 .It Li "mouse_button_flag" Ta "" Ta "Pane mouse button flag"
@@ -6463,6 +6491,8 @@ The following variables are available, where appropriate:
 .It Li "prev_window_active" Ta "" Ta "1 if previous window in W: loop is active"
 .It Li "prev_window_index" Ta "" Ta "Index of previous window in W: loop"
 .It Li "rectangle_toggle" Ta "" Ta "1 if rectangle selection is activated"
+.It Li "retained_first_line" Ta "" Ta "First retained line number from search-history"
+.It Li "retained_last_line" Ta "" Ta "Last retained line number from search-history"
 .It Li "scroll_position" Ta "" Ta "Scroll position in copy mode"
 .It Li "scroll_region_lower" Ta "" Ta "Bottom of scroll region in pane"
 .It Li "scroll_region_upper" Ta "" Ta "Top of scroll region in pane"

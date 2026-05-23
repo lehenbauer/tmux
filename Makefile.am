@@ -131,6 +131,7 @@ dist_tmux_SOURCES = \
 	cmd-rotate-window.c \
 	cmd-run-shell.c \
 	cmd-save-buffer.c \
+	cmd-search-history.c \
 	cmd-select-layout.c \
 	cmd-select-pane.c \
 	cmd-select-window.c \
