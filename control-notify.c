@@ -258,3 +258,20 @@ control_notify_paste_buffer_deleted(const char *name)
 		control_write(c, "%%paste-buffer-deleted %s", name);
 	}
 }
+
+void
+control_notify_whisp_shell_event(struct window_pane *wp)
+{
+	struct client	*c;
+	struct session	*s;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (!CONTROL_SHOULD_NOTIFY_CLIENT(c) || c->session == NULL)
+			continue;
+		s = c->session;
+		if (winlink_find_by_window_id(&s->windows, wp->window->id) == NULL)
+			continue;
+		control_write(c, "%%whisp-shell-event %%%u %llu", wp->id,
+		    (unsigned long long)wp->whisp_shell_seq);
+	}
+}
