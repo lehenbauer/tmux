@@ -90,6 +90,7 @@ extern const struct cmd_entry cmd_respawn_window_entry;
 extern const struct cmd_entry cmd_rotate_window_entry;
 extern const struct cmd_entry cmd_run_shell_entry;
 extern const struct cmd_entry cmd_save_buffer_entry;
+extern const struct cmd_entry cmd_search_history_entry;
 extern const struct cmd_entry cmd_select_layout_entry;
 extern const struct cmd_entry cmd_select_pane_entry;
 extern const struct cmd_entry cmd_select_window_entry;
@@ -184,6 +185,7 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_rotate_window_entry,
 	&cmd_run_shell_entry,
 	&cmd_save_buffer_entry,
+	&cmd_search_history_entry,
 	&cmd_select_layout_entry,
 	&cmd_select_pane_entry,
 	&cmd_select_window_entry,
