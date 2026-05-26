@@ -50,7 +50,7 @@ cmd_paste_buffer_paste(struct window_pane *wp, const char *buf, size_t len)
 	size_t	 n;
 
 	n = utf8_stravisx(&cp, buf, len, VIS_SAFE|VIS_NOSLASH);
-	bufferevent_write(wp->event, cp, n);
+	window_pane_write(wp, cp, n);
 	free(cp);
 }
 
@@ -95,7 +95,7 @@ cmd_paste_buffer_exec(struct cmd *self, struct cmdq_item *item)
 		seplen = strlen(sepstr);
 
 		if (bracket && (wp->screen->mode & MODE_BRACKETPASTE))
-			bufferevent_write(wp->event, "\033[200~", 6);
+			window_pane_write(wp, "\033[200~", 6);
 
 		bufdata = paste_buffer_data(pb, &bufsize);
 		bufend = bufdata + bufsize;
@@ -106,23 +106,23 @@ cmd_paste_buffer_exec(struct cmd *self, struct cmdq_item *item)
 				break;
 			len = line - bufdata;
 			if (args_has(args, 'S'))
-				bufferevent_write(wp->event, bufdata, len);
+				window_pane_write(wp, bufdata, len);
 			else
 				cmd_paste_buffer_paste(wp, bufdata, len);
-			bufferevent_write(wp->event, sepstr, seplen);
+			window_pane_write(wp, sepstr, seplen);
 
 			bufdata = line + 1;
 		}
 		if (bufdata != bufend) {
 			len = bufend - bufdata;
 			if (args_has(args, 'S'))
-				bufferevent_write(wp->event, bufdata, len);
+				window_pane_write(wp, bufdata, len);
 			else
 				cmd_paste_buffer_paste(wp, bufdata, len);
 		}
 
 		if (bracket && (wp->screen->mode & MODE_BRACKETPASTE))
-			bufferevent_write(wp->event, "\033[201~", 6);
+			window_pane_write(wp, "\033[201~", 6);
 	}
 
 	if (pb != NULL && args_has(args, 'd'))

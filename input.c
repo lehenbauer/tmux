@@ -1145,7 +1145,10 @@ input_send_reply(struct input_ctx *ictx, const char *reply)
 {
 	if (ictx->event != NULL) {
 		log_debug("%s: %s", __func__, reply);
-		bufferevent_write(ictx->event, reply, strlen(reply));
+		if (ictx->wp != NULL)
+			window_pane_write(ictx->wp, reply, strlen(reply));
+		else
+			bufferevent_write(ictx->event, reply, strlen(reply));
 	}
 }
 
