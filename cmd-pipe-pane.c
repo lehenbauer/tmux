@@ -200,7 +200,7 @@ cmd_pipe_pane_read_callback(__unused struct bufferevent *bufev, void *data)
 	available = EVBUFFER_LENGTH(evb);
 	log_debug("%%%u pipe read %zu", wp->id, available);
 
-	bufferevent_write(wp->event, EVBUFFER_DATA(evb), available);
+	window_pane_write(wp, EVBUFFER_DATA(evb), available);
 	evbuffer_drain(evb, available);
 
 	if (window_pane_destroy_ready(wp))

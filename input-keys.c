@@ -31,6 +31,8 @@
  */
 
 static void	 input_key_mouse(struct window_pane *, struct mouse_event *);
+static int	 input_key1(struct screen *, struct bufferevent *,
+		     struct window_pane *, key_code);
 
 /* Entry in the key tree. */
 struct input_key_entry {
@@ -407,15 +409,18 @@ input_key_pane(struct window_pane *wp, key_code key, struct mouse_event *m)
 			input_key_mouse(wp, m);
 		return (0);
 	}
-	return (input_key(wp->screen, wp->event, key));
+	return (input_key1(wp->screen, wp->event, wp, key));
 }
 
 static void
-input_key_write(const char *from, struct bufferevent *bev, const char *data,
-    size_t size)
+input_key_write(const char *from, struct window_pane *wp,
+    struct bufferevent *bev, const char *data, size_t size)
 {
 	log_debug("%s: %.*s", from, (int)size, data);
-	bufferevent_write(bev, data, size);
+	if (wp != NULL)
+		window_pane_write(wp, data, size);
+	else
+		bufferevent_write(bev, data, size);
 }
 
 /*
@@ -423,7 +428,8 @@ input_key_write(const char *from, struct bufferevent *bev, const char *data,
  * possible formats, depending on the configured output mode.
  */
 static int
-input_key_extended(struct bufferevent *bev, key_code key)
+input_key_extended(struct window_pane *wp, struct bufferevent *bev,
+    key_code key)
 {
 	char		 tmp[64], modifier;
 	struct utf8_data ud;
@@ -469,7 +475,7 @@ input_key_extended(struct bufferevent *bev, key_code key)
 	else
 		xsnprintf(tmp, sizeof tmp, "\033[%llu;%cu", key, modifier);
 
-	input_key_write(__func__, bev, tmp, strlen(tmp));
+	input_key_write(__func__, wp, bev, tmp, strlen(tmp));
 	return (0);
 }
 
@@ -479,7 +485,7 @@ input_key_extended(struct bufferevent *bev, key_code key)
  * emulate quirks of terminals that today can be only found in museums.
  */
 static int
-input_key_vt10x(struct bufferevent *bev, key_code key)
+input_key_vt10x(struct window_pane *wp, struct bufferevent *bev, key_code key)
 {
 	struct utf8_data	 ud;
 	key_code		 onlykey;
@@ -492,7 +498,7 @@ input_key_vt10x(struct bufferevent *bev, key_code key)
 	log_debug("%s: key in %llx", __func__, key);
 
 	if (key & KEYC_META)
-		input_key_write(__func__, bev, "\033", 1);
+		input_key_write(__func__, wp, bev, "\033", 1);
 
 	/*
 	 * There's no way to report modifiers for unicode keys in standard mode
@@ -500,7 +506,7 @@ input_key_vt10x(struct bufferevent *bev, key_code key)
 	 */
 	if (KEYC_IS_UNICODE(key)) {
 		utf8_to_data(key, &ud);
-                input_key_write(__func__, bev, ud.data, ud.size);
+		input_key_write(__func__, wp, bev, ud.data, ud.size);
 		return (0);
 	}
 
@@ -536,13 +542,13 @@ input_key_vt10x(struct bufferevent *bev, key_code key)
 	log_debug("%s: key out %llx", __func__, key);
 
 	ud.data[0] = key & 0x7f;
-	input_key_write(__func__, bev, &ud.data[0], 1);
+	input_key_write(__func__, wp, bev, &ud.data[0], 1);
 	return (0);
 }
 
 /* Pick keys that are reported as vt10x keys in modifyOtherKeys=1 mode. */
 static int
-input_key_mode1(struct bufferevent *bev, key_code key)
+input_key_mode1(struct window_pane *wp, struct bufferevent *bev, key_code key)
 {
 	key_code	 onlykey;
 
@@ -550,7 +556,7 @@ input_key_mode1(struct bufferevent *bev, key_code key)
 
 	/* A regular or shifted key + Meta. */
 	if ((key & (KEYC_CTRL | KEYC_META)) == KEYC_META)
-		return (input_key_vt10x(bev, key));
+		return (input_key_vt10x(wp, bev, key));
 
 	/*
 	 * As per
@@ -564,14 +570,15 @@ input_key_mode1(struct bufferevent *bev, key_code key)
 	     onlykey == '^' ||
 	     (onlykey >= '2' && onlykey <= '8') ||
 	     (onlykey >= '@' && onlykey <= '~')))
-		return (input_key_vt10x(bev, key));
+		return (input_key_vt10x(wp, bev, key));
 
 	return (-1);
 }
 
 /* Translate a key code into an output key sequence. */
-int
-input_key(struct screen *s, struct bufferevent *bev, key_code key)
+static int
+input_key1(struct screen *s, struct bufferevent *bev, struct window_pane *wp,
+    key_code key)
 {
 	struct input_key_entry	*ike = NULL;
 	key_code		 newkey;
@@ -584,7 +591,7 @@ input_key(struct screen *s, struct bufferevent *bev, key_code key)
 	/* Literal keys go as themselves (can't be more than eight bits). */
 	if (key & KEYC_LITERAL) {
 		ud.data[0] = (u_char)key;
-		input_key_write(__func__, bev, &ud.data[0], 1);
+		input_key_write(__func__, wp, bev, &ud.data[0], 1);
 		return (0);
 	}
 
@@ -607,7 +614,7 @@ input_key(struct screen *s, struct bufferevent *bev, key_code key)
 					ud.data[0] = newkey - 0x60;
 			}
 			if (ud.data[0] != 255)
-				input_key_write(__func__, bev, &ud.data[0], 1);
+				input_key_write(__func__, wp, bev, &ud.data[0], 1);
 			return (0);
 		}
 		key = newkey|(key & (KEYC_MASK_FLAGS|KEYC_MASK_MODIFIERS));
@@ -635,12 +642,12 @@ input_key(struct screen *s, struct bufferevent *bev, key_code key)
 		    key == C0_ESC ||
 		    (key >= 0x20 && key <= 0x7f)) {
 			ud.data[0] = key;
-			input_key_write(__func__, bev, &ud.data[0], 1);
+			input_key_write(__func__, wp, bev, &ud.data[0], 1);
 			return (0);
 		}
 		if (KEYC_IS_UNICODE(key)) {
 			utf8_to_data(key, &ud);
-			input_key_write(__func__, bev, ud.data, ud.size);
+			input_key_write(__func__, wp, bev, ud.data, ud.size);
 			return (0);
 		}
 	}
@@ -667,8 +674,9 @@ input_key(struct screen *s, struct bufferevent *bev, key_code key)
 		if (KEYC_IS_PASTE(key) && (~s->mode & MODE_BRACKETPASTE))
 			return (0);
 		if ((key & KEYC_META) && (~key & KEYC_IMPLIED_META))
-			input_key_write(__func__, bev, "\033", 1);
-		input_key_write(__func__, bev, ike->data, strlen(ike->data));
+			input_key_write(__func__, wp, bev, "\033", 1);
+		input_key_write(__func__, wp, bev, ike->data,
+		    strlen(ike->data));
 		return (0);
 	}
 
@@ -693,19 +701,25 @@ input_key(struct screen *s, struct bufferevent *bev, key_code key)
 		 * The simplest mode to handle - *all* modified keys are
 		 * reported in the extended form.
 		 */
-		return (input_key_extended(bev, key));
-        case MODE_KEYS_EXTENDED:
+		return (input_key_extended(wp, bev, key));
+	case MODE_KEYS_EXTENDED:
 		/*
 		 * Some keys are still reported in standard mode, to maintain
 		 * compatibility with applications unaware of extended keys.
 		 */
-		if (input_key_mode1(bev, key) == -1)
-			return (input_key_extended(bev, key));
+		if (input_key_mode1(wp, bev, key) == -1)
+			return (input_key_extended(wp, bev, key));
 		return (0);
 	default:
 		/* The standard mode. */
-		return (input_key_vt10x(bev, key));
+		return (input_key_vt10x(wp, bev, key));
 	}
+}
+
+int
+input_key(struct screen *s, struct bufferevent *bev, key_code key)
+{
+	return (input_key1(s, bev, NULL, key));
 }
 
 /* Get mouse event string. */
@@ -811,5 +825,5 @@ input_key_mouse(struct window_pane *wp, struct mouse_event *m)
 	if (!input_key_get_mouse(s, m, x, y, &buf, &len))
 		return;
 	log_debug("writing mouse %.*s to %%%u", (int)len, buf, wp->id);
-	input_key_write(__func__, wp->event, buf, len);
+	input_key_write(__func__, wp, wp->event, buf, len);
 }
