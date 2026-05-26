@@ -71,7 +71,7 @@ static struct window_pane *window_pane_create(struct window *, u_int, u_int,
 		    u_int);
 static void	window_pane_destroy(struct window_pane *);
 static void	window_pane_full_size_offset(struct window_pane *wp,
-		    u_int *xoff, u_int *yoff, u_int *sx, u_int *sy);
+		    int *xoff, int *yoff, u_int *sx, u_int *sy);
 
 RB_GENERATE(windows, window, entry, window_cmp);
 RB_GENERATE(winlinks, winlink, entry, winlink_cmp);
@@ -341,6 +341,7 @@ window_create(u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 	w->flags = 0;
 
 	TAILQ_INIT(&w->panes);
+	TAILQ_INIT(&w->z_index);
 	TAILQ_INIT(&w->last_panes);
 	w->active = NULL;
 
@@ -381,10 +382,8 @@ window_destroy(struct window *w)
 	window_unzoom(w, 0);
 	RB_REMOVE(windows, &windows, w);
 
-	if (w->layout_root != NULL)
-		layout_free_cell(w->layout_root);
-	if (w->saved_layout_root != NULL)
-		layout_free_cell(w->saved_layout_root);
+	layout_free_cell(w->layout_root);
+	layout_free_cell(w->saved_layout_root);
 	free(w->old_layout);
 
 	window_destroy_panes(w);
@@ -409,12 +408,10 @@ window_pane_destroy_ready(struct window_pane *wp)
 {
 	int	n;
 
-	if (wp->pipe_fd != -1) {
-		if (EVBUFFER_LENGTH(wp->pipe_event->output) != 0)
-			return (0);
-		if (ioctl(wp->fd, FIONREAD, &n) != -1 && n > 0)
-			return (0);
-	}
+	if (wp->pipe_fd != -1 && EVBUFFER_LENGTH(wp->pipe_event->output) != 0)
+		return (0);
+	if (ioctl(wp->fd, FIONREAD, &n) != -1 && n > 0)
+		return (0);
 
 	if (~wp->flags & PANE_EXITED)
 		return (0);
@@ -567,6 +564,8 @@ window_set_active_pane(struct window *w, struct window_pane *wp, int notify)
 
 	if (wp == w->active)
 		return (0);
+	if (w->flags & WINDOW_ZOOMED)
+		window_unzoom(w, 1);
 	lastwp = w->active;
 
 	window_pane_stack_remove(&w->last_panes, wp);
@@ -582,6 +581,7 @@ window_set_active_pane(struct window *w, struct window_pane *wp, int notify)
 	}
 
 	tty_update_window_offset(w);
+	server_redraw_window(w);
 
 	if (notify)
 		notify_window("window-pane-changed", w);
@@ -628,7 +628,17 @@ window_redraw_active_switch(struct window *w, struct window_pane *wp)
 		}
 		if (wp == w->active)
 			break;
+
+		/* If the pane is floating, move to the front. */
+		if (wp->flags & PANE_FLOATING) {
+			TAILQ_REMOVE(&w->z_index, wp, zentry);
+			TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
+			wp->flags |= PANE_REDRAW;
+		}
+
 		wp = w->active;
+		if (wp == NULL)
+			break;
 	}
 }
 
@@ -641,18 +651,32 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 
 	pane_status = options_get_number(w->options, "pane-border-status");
 
-	TAILQ_FOREACH(wp, &w->panes, entry) {
+	TAILQ_FOREACH(wp, &w->z_index, zentry) {
 		if (!window_pane_visible(wp))
 			continue;
 		window_pane_full_size_offset(wp, &xoff, &yoff, &sx, &sy);
-		if ((int)x < xoff || x > xoff + sx)
-			continue;
-		if (pane_status == PANE_STATUS_TOP) {
-			if ((int)y <= yoff - 2 || y > yoff + sy - 1)
+		if (~wp->flags & PANE_FLOATING) {
+			/* Tiled - to and including bottom or right border. */
+			if ((int)x < xoff || x > xoff + sx)
 				continue;
+			if (pane_status == PANE_STATUS_TOP) {
+				if ((int)y < yoff - 1 || y > yoff + sy)
+					continue;
+			} else {
+				if ((int)y < yoff || y > yoff + sy)
+					continue;
+			}
 		} else {
-			if ((int)y < yoff || y > yoff + sy)
+			/* Floating - include top or or left border. */
+			if ((int)x < xoff - 1 || x > xoff + sx)
 				continue;
+			if (pane_status == PANE_STATUS_TOP) {
+				if ((int)y <= yoff - 2 || y > yoff + sy - 1)
+					continue;
+			} else {
+				if ((int)y < yoff - 1 || y > yoff + sy)
+					continue;
+			}
 		}
 		return (wp);
 	}
@@ -708,8 +732,7 @@ window_zoom(struct window_pane *wp)
 
 	if (w->flags & WINDOW_ZOOMED)
 		return (-1);
-
-	if (window_count_panes(w) == 1)
+	if (window_count_panes(w, 1) == 1)
 		return (-1);
 
 	if (w->active != wp)
@@ -745,7 +768,7 @@ window_unzoom(struct window *w, int notify)
 	TAILQ_FOREACH(wp, &w->panes, entry) {
 		wp->layout_cell = wp->saved_layout_cell;
 		wp->saved_layout_cell = NULL;
-		wp->flags ^= PANE_ZOOMED;
+		wp->flags &= ~PANE_ZOOMED;
 	}
 	layout_fix_panes(w, NULL);
 
@@ -798,10 +821,16 @@ window_add_pane(struct window *w, struct window_pane *other, u_int hlimit,
 			TAILQ_INSERT_BEFORE(other, wp, entry);
 	} else {
 		log_debug("%s: @%u after %%%u", __func__, w->id, wp->id);
-		if (flags & SPAWN_FULLSIZE)
+		if (flags & (SPAWN_FULLSIZE|SPAWN_FLOATING))
 			TAILQ_INSERT_TAIL(&w->panes, wp, entry);
 		else
 			TAILQ_INSERT_AFTER(&w->panes, other, wp, entry);
+	}
+	if (~flags & SPAWN_FLOATING)
+		TAILQ_INSERT_TAIL(&w->z_index, wp, zentry);
+	else {
+		wp->flags |= PANE_FLOATING;
+		TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
 	}
 	return (wp);
 }
@@ -835,8 +864,8 @@ void
 window_remove_pane(struct window *w, struct window_pane *wp)
 {
 	window_lost_pane(w, wp);
-
 	TAILQ_REMOVE(&w->panes, wp, entry);
+	TAILQ_REMOVE(&w->z_index, wp, zentry);
 	window_pane_destroy(wp);
 }
 
@@ -896,14 +925,15 @@ window_pane_index(struct window_pane *wp, u_int *i)
 }
 
 u_int
-window_count_panes(struct window *w)
+window_count_panes(struct window *w, int with_floating)
 {
 	struct window_pane	*wp;
-	u_int			 n;
+	u_int			 n = 0;
 
-	n = 0;
-	TAILQ_FOREACH(wp, &w->panes, entry)
-		n++;
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (with_floating || ~wp->flags & PANE_FLOATING)
+			n++;
+	}
 	return (n);
 }
 
@@ -920,6 +950,7 @@ window_destroy_panes(struct window *w)
 	while (!TAILQ_EMPTY(&w->panes)) {
 		wp = TAILQ_FIRST(&w->panes);
 		TAILQ_REMOVE(&w->panes, wp, entry);
+		TAILQ_REMOVE(&w->z_index, wp, zentry);
 		window_pane_destroy(wp);
 	}
 }
@@ -957,7 +988,7 @@ window_pane_printable_flags(struct window_pane *wp)
 {
 	struct window	*w = wp->window;
 	static char	 flags[32];
-	u_int		 pos = 0;
+	int		 pos = 0;
 
 	if (wp == w->active)
 		flags[pos++] = '*';
@@ -1261,7 +1292,7 @@ window_pane_reset_mode_all(struct window_pane *wp)
 static void
 window_pane_copy_paste(struct window_pane *wp, char *buf, size_t len)
 {
- 	struct window_pane	*loop;
+	struct window_pane	*loop;
 
 	TAILQ_FOREACH(loop, &wp->window->panes, entry) {
 		if (loop != wp &&
@@ -1279,7 +1310,7 @@ window_pane_copy_paste(struct window_pane *wp, char *buf, size_t len)
 static void
 window_pane_copy_key(struct window_pane *wp, key_code key)
 {
- 	struct window_pane	*loop;
+	struct window_pane	*loop;
 
 	TAILQ_FOREACH(loop, &wp->window->panes, entry) {
 		if (loop != wp &&
@@ -1428,7 +1459,7 @@ window_pane_choose_best(struct window_pane **list, u_int size)
  * scrollbars if they were visible but not including the border(s).
  */
 static void
-window_pane_full_size_offset(struct window_pane *wp, u_int *xoff, u_int *yoff,
+window_pane_full_size_offset(struct window_pane *wp, int *xoff, int *yoff,
     u_int *sx, u_int *sy)
 {
 	struct window		*w = wp->window;
@@ -1462,9 +1493,9 @@ window_pane_find_up(struct window_pane *wp)
 {
 	struct window		*w;
 	struct window_pane	*next, *best, **list;
-	u_int			 edge, left, right, end, size;
-	int			 status, found;
-	u_int			 xoff, yoff, sx, sy;
+	int			 edge, left, right, end, status, found;
+	int			 xoff, yoff;
+	u_int			 size, sx, sy;
 
 	if (wp == NULL)
 		return (NULL);
@@ -1479,25 +1510,25 @@ window_pane_find_up(struct window_pane *wp)
 	edge = yoff;
 	if (status == PANE_STATUS_TOP) {
 		if (edge == 1)
-			edge = w->sy + 1;
+			edge = (int)w->sy + 1;
 	} else if (status == PANE_STATUS_BOTTOM) {
 		if (edge == 0)
-			edge = w->sy;
+			edge = (int)w->sy;
 	} else {
 		if (edge == 0)
-			edge = w->sy + 1;
+			edge = (int)w->sy + 1;
 	}
 
 	left = xoff;
-	right = xoff + sx;
+	right = xoff + (int)sx;
 
 	TAILQ_FOREACH(next, &w->panes, entry) {
 		window_pane_full_size_offset(next, &xoff, &yoff, &sx, &sy);
 		if (next == wp)
 			continue;
-		if (yoff + sy + 1 != edge)
+		if (yoff + (int)sy + 1 != edge)
 			continue;
-		end = xoff + sx - 1;
+		end = xoff + (int)sx - 1;
 
 		found = 0;
 		if (xoff < left && end > right)
@@ -1523,9 +1554,9 @@ window_pane_find_down(struct window_pane *wp)
 {
 	struct window		*w;
 	struct window_pane	*next, *best, **list;
-	u_int			 edge, left, right, end, size;
-	int			 status, found;
-	u_int			 xoff, yoff, sx, sy;
+	int			 edge, left, right, end, status, found;
+	int			 xoff, yoff;
+	u_int			 size, sx, sy;
 
 	if (wp == NULL)
 		return (NULL);
@@ -1537,20 +1568,20 @@ window_pane_find_down(struct window_pane *wp)
 
 	window_pane_full_size_offset(wp, &xoff, &yoff, &sx, &sy);
 
-	edge = yoff + sy + 1;
+	edge = yoff + (int)sy + 1;
 	if (status == PANE_STATUS_TOP) {
-		if (edge >= w->sy)
+		if (edge >= (int)w->sy)
 			edge = 1;
 	} else if (status == PANE_STATUS_BOTTOM) {
-		if (edge >= w->sy - 1)
+		if (edge >= (int)w->sy - 1)
 			edge = 0;
 	} else {
-		if (edge >= w->sy)
+		if (edge >= (int)w->sy)
 			edge = 0;
 	}
 
 	left = wp->xoff;
-	right = wp->xoff + wp->sx;
+	right = wp->xoff + (int)wp->sx;
 
 	TAILQ_FOREACH(next, &w->panes, entry) {
 		window_pane_full_size_offset(next, &xoff, &yoff, &sx, &sy);
@@ -1558,7 +1589,7 @@ window_pane_find_down(struct window_pane *wp)
 			continue;
 		if (yoff != edge)
 			continue;
-		end = xoff + sx - 1;
+		end = xoff + (int)sx - 1;
 
 		found = 0;
 		if (xoff < left && end > right)
@@ -1584,9 +1615,9 @@ window_pane_find_left(struct window_pane *wp)
 {
 	struct window		*w;
 	struct window_pane	*next, *best, **list;
-	u_int			 edge, top, bottom, end, size;
-	int			 found;
-	u_int			 xoff, yoff, sx, sy;
+	int			 edge, top, bottom, end, found;
+	int			 xoff, yoff;
+	u_int			 size, sx, sy;
 
 	if (wp == NULL)
 		return (NULL);
@@ -1599,18 +1630,18 @@ window_pane_find_left(struct window_pane *wp)
 
 	edge = xoff;
 	if (edge == 0)
-		edge = w->sx + 1;
+		edge = (int)w->sx + 1;
 
 	top = yoff;
-	bottom = yoff + sy;
+	bottom = yoff + (int)sy;
 
 	TAILQ_FOREACH(next, &w->panes, entry) {
 		window_pane_full_size_offset(next, &xoff, &yoff, &sx, &sy);
 		if (next == wp)
 			continue;
-		if (xoff + sx + 1 != edge)
+		if (xoff + (int)sx + 1 != edge)
 			continue;
-		end = yoff + sy - 1;
+		end = yoff + (int)sy - 1;
 
 		found = 0;
 		if (yoff < top && end > bottom)
@@ -1636,9 +1667,9 @@ window_pane_find_right(struct window_pane *wp)
 {
 	struct window		*w;
 	struct window_pane	*next, *best, **list;
-	u_int			 edge, top, bottom, end, size;
-	int			 found;
-	u_int			 xoff, yoff, sx, sy;
+	int			 edge, top, bottom, end, found;
+	int			 xoff, yoff;
+	u_int			 size, sx, sy;
 
 	if (wp == NULL)
 		return (NULL);
@@ -1649,12 +1680,12 @@ window_pane_find_right(struct window_pane *wp)
 
 	window_pane_full_size_offset(wp, &xoff, &yoff, &sx, &sy);
 
-	edge = xoff + sx + 1;
-	if (edge >= w->sx)
+	edge = xoff + (int)sx + 1;
+	if (edge >= (int)w->sx)
 		edge = 0;
 
 	top = wp->yoff;
-	bottom = wp->yoff + wp->sy;
+	bottom = wp->yoff + (int)wp->sy;
 
 	TAILQ_FOREACH(next, &w->panes, entry) {
 		window_pane_full_size_offset(next, &xoff, &yoff, &sx, &sy);
@@ -1662,7 +1693,7 @@ window_pane_find_right(struct window_pane *wp)
 			continue;
 		if (xoff != edge)
 			continue;
-		end = yoff + sy - 1;
+		end = yoff + (int)sy - 1;
 
 		found = 0;
 		if (yoff < top && end > bottom)
@@ -1682,6 +1713,7 @@ window_pane_find_right(struct window_pane *wp)
 	return (best);
 }
 
+/* Add window to stack. */
 void
 window_pane_stack_push(struct window_panes *stack, struct window_pane *wp)
 {
@@ -1692,6 +1724,7 @@ window_pane_stack_push(struct window_panes *stack, struct window_pane *wp)
 	}
 }
 
+/* Remove window from stack. */
 void
 window_pane_stack_remove(struct window_panes *stack, struct window_pane *wp)
 {
@@ -2047,13 +2080,15 @@ struct style_range *
 window_pane_border_status_get_range(struct window_pane *wp, u_int x, u_int y)
 {
 	struct style_ranges	*srs;
-	struct window		*w = wp->window;
-	struct options		*wo = w->options;
+	struct window		*w;
+	struct options		*wo;
 	u_int			 line;
 	int			 pane_status;
 
 	if (wp == NULL)
 		return (NULL);
+	w = wp->window;
+	wo = w->options;
 	srs = &wp->border_status_line.ranges;
 
 	pane_status = options_get_number(wo, "pane-border-status");
@@ -2069,4 +2104,114 @@ window_pane_border_status_get_range(struct window_pane *wp, u_int x, u_int y)
 	 * the stored bounds of the range.
 	 */
 	return (style_ranges_get_range(srs, x - wp->xoff - 2));
+}
+
+/* Work out geometry for tiled panes. */
+int
+window_pane_tiled_geometry(struct window *w, struct window_pane *wp,
+    int *out_size, int *out_flags, enum layout_type *out_type,
+    struct cmdq_item *item, struct args *args, char **cause)
+{
+	int			size = -1, flags = *out_flags;
+	enum layout_type	type;
+	u_int			curval = 0;
+
+	type = LAYOUT_TOPBOTTOM;
+	if (args_has(args, 'h'))
+		type = LAYOUT_LEFTRIGHT;
+
+	if (args_has(args, 'l') || args_has(args, 'p')) {
+		if (args_has(args, 'f')) {
+			if (type == LAYOUT_TOPBOTTOM)
+				curval = w->sy;
+			else
+				curval = w->sx;
+		} else {
+			if (type == LAYOUT_TOPBOTTOM)
+				curval = wp->sy;
+			else
+				curval = wp->sx;
+		}
+	}
+
+	if (args_has(args, 'l')) {
+		size = args_percentage_and_expand(args, 'l', 0, INT_MAX, curval,
+		    item, cause);
+	} else if (args_has(args, 'p')) {
+		size = args_strtonum_and_expand(args, 'p', 0, 100, item,
+		    cause);
+		if (cause == NULL)
+			size = curval * size / 100;
+	}
+	if (*cause != NULL)
+		return (-1);
+
+	if (args_has(args, 'b'))
+		flags |= SPAWN_BEFORE;
+	if (args_has(args, 'f'))
+		flags |= SPAWN_FULLSIZE;
+
+	*out_size = size;
+	*out_flags = flags;
+	*out_type = type;
+	return (0);
+}
+
+/* Work out geometry for floating panes. */
+int
+window_pane_floating_geometry(struct window *w, __unused struct window_pane *wp,
+    u_int *out_x, u_int *out_y, u_int *out_sx, u_int *out_sy,
+    struct cmdq_item *item, struct args *args, char **cause)
+{
+	u_int	x, y, sx = w->sx / 2, sy = w->sy / 2;
+
+	if (args_has(args, 'x')) {
+		sx = args_percentage_and_expand(args, 'x', 0, USHRT_MAX, w->sx,
+		    item, cause);
+		if (*cause != NULL)
+			return (-1);
+	}
+	if (args_has(args, 'y')) {
+		sy = args_percentage_and_expand(args, 'y', 0, USHRT_MAX, w->sy,
+		    item, cause);
+		if (*cause != NULL)
+			return (-1);
+	}
+
+	if (args_has(args, 'X')) {
+		x = args_percentage_and_expand(args, 'X', 0, USHRT_MAX, w->sx,
+		    item, cause);
+		if (*cause != NULL)
+			return (-1);
+	} else {
+		if (w->last_new_pane_x == 0)
+			x = 4;
+		else {
+			x = w->last_new_pane_x + 4;
+			if (w->last_new_pane_x > w->sx)
+				x = 4;
+		}
+		w->last_new_pane_x = x;
+	}
+	if (args_has(args, 'Y')) {
+		y = args_percentage_and_expand(args, 'Y', 0, USHRT_MAX, w->sy,
+		    item, cause);
+		if (*cause != NULL)
+			return (-1);
+	} else {
+		if (w->last_new_pane_y == 0)
+			y = 2;
+		else {
+			y = w->last_new_pane_y + 2;
+			if (w->last_new_pane_y > w->sy)
+				y = 2;
+		}
+		w->last_new_pane_y = y;
+	}
+
+	*out_x = x;
+	*out_y = y;
+	*out_sx = sx;
+	*out_sy = sy;
+	return (0);
 }

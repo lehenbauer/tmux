@@ -103,7 +103,7 @@ cmd_select_pane_exec(struct cmd *self, struct cmdq_item *item)
 		 * spawned without being visited (for example split-window -d).
 		 */
 		lastwp = TAILQ_FIRST(&w->last_panes);
-		if (lastwp == NULL && window_count_panes(w) == 2) {
+		if (lastwp == NULL && window_count_panes(w, 1) == 2) {
 			lastwp = TAILQ_PREV(w->active, window_panes, entry);
 			if (lastwp == NULL)
 				lastwp = TAILQ_NEXT(w->active, entry);
@@ -159,6 +159,10 @@ cmd_select_pane_exec(struct cmd *self, struct cmdq_item *item)
 			    PANE_THEMECHANGED);
 			server_redraw_window_borders(markedwp->window);
 			server_status_window(markedwp->window);
+		}
+		if (wp->flags & PANE_FLOATING) {
+			window_redraw_active_switch(w, wp);
+			window_set_active_pane(w, wp, 1);
 		}
 		return (CMD_RETURN_NORMAL);
 	}

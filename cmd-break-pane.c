@@ -73,7 +73,7 @@ cmd_break_pane_exec(struct cmd *self, struct cmdq_item *item)
 	}
 	server_unzoom_window(w);
 
-	if (window_count_panes(w) == 1) {
+	if (window_count_panes(w, 1) == 1) {
 		if (server_link_window(src_s, wl, dst_s, idx, 0,
 		    !args_has(args, 'd'), &cause) != 0) {
 			cmdq_error(item, "%s", cause);
@@ -96,6 +96,7 @@ cmd_break_pane_exec(struct cmd *self, struct cmdq_item *item)
 	}
 
 	TAILQ_REMOVE(&w->panes, wp, entry);
+	TAILQ_REMOVE(&w->z_index, wp, zentry);
 	server_client_remove_pane(wp);
 	window_lost_pane(w, wp);
 	layout_close_pane(wp);
@@ -104,6 +105,7 @@ cmd_break_pane_exec(struct cmd *self, struct cmdq_item *item)
 	options_set_parent(wp->options, w->options);
 	wp->flags |= (PANE_STYLECHANGED|PANE_THEMECHANGED);
 	TAILQ_INSERT_HEAD(&w->panes, wp, entry);
+	TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
 	w->active = wp;
 	w->latest = tc;
 
