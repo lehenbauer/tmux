@@ -304,6 +304,28 @@ window_pane_update_activity(struct window_pane *wp, size_t bytes)
 	alerts_queue(wp->window, WINDOW_ACTIVITY);
 }
 
+void
+window_pane_update_input(struct window_pane *wp, size_t bytes)
+{
+	if (bytes == 0)
+		return;
+
+	gettimeofday(&wp->pane_input_time, NULL);
+	wp->pane_input_seq++;
+	wp->pane_input_bytes += bytes;
+}
+
+int
+window_pane_write(struct window_pane *wp, const void *data, size_t bytes)
+{
+	if (bytes == 0)
+		return (0);
+	if (bufferevent_write(wp->event, data, bytes) != 0)
+		return (-1);
+	window_pane_update_input(wp, bytes);
+	return (0);
+}
+
 struct window *
 window_create(u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 {
@@ -522,13 +544,13 @@ window_pane_update_focus(struct window_pane *wp)
 		if (!focused && (wp->flags & PANE_FOCUSED)) {
 			log_debug("%s: %%%u focus out", __func__, wp->id);
 			if (wp->base.mode & MODE_FOCUSON)
-				bufferevent_write(wp->event, "\033[O", 3);
+				window_pane_write(wp, "\033[O", 3);
 			notify_pane("pane-focus-out", wp);
 			wp->flags &= ~PANE_FOCUSED;
 		} else if (focused && (~wp->flags & PANE_FOCUSED)) {
 			log_debug("%s: %%%u focus in", __func__, wp->id);
 			if (wp->base.mode & MODE_FOCUSON)
-				bufferevent_write(wp->event, "\033[I", 3);
+				window_pane_write(wp, "\033[I", 3);
 			notify_pane("pane-focus-in", wp);
 			wp->flags |= PANE_FOCUSED;
 		} else
@@ -1249,7 +1271,7 @@ window_pane_copy_paste(struct window_pane *wp, char *buf, size_t len)
 		    window_pane_visible(loop) &&
 		    options_get_number(loop->options, "synchronize-panes")) {
 			log_debug("%s: %.*s", __func__, (int)len, buf);
-			bufferevent_write(loop->event, buf, len);
+			window_pane_write(loop, buf, len);
 		}
 	}
 }
@@ -1283,7 +1305,7 @@ window_pane_paste(struct window_pane *wp, key_code key, char *buf, size_t len)
 		return;
 
 	log_debug("%s: %.*s", __func__, (int)len, buf);
-	bufferevent_write(wp->event, buf, len);
+	window_pane_write(wp, buf, len);
 
 	if (options_get_number(wp->options, "synchronize-panes"))
 		window_pane_copy_paste(wp, buf, len);
@@ -2009,11 +2031,11 @@ window_pane_send_theme_update(struct window_pane *wp)
 	switch (theme) {
 	case THEME_LIGHT:
 		log_debug("%s: %%%u light theme", __func__, wp->id);
-		bufferevent_write(wp->event, "\033[?997;2n", 9);
+		window_pane_write(wp, "\033[?997;2n", 9);
 		break;
 	case THEME_DARK:
 		log_debug("%s: %%%u dark theme", __func__, wp->id);
-		bufferevent_write(wp->event, "\033[?997;1n", 9);
+		window_pane_write(wp, "\033[?997;1n", 9);
 		break;
 	case THEME_UNKNOWN:
 		log_debug("%s: %%%u unknown theme", __func__, wp->id);

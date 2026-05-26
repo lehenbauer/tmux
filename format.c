@@ -2050,6 +2050,25 @@ format_cb_pane_activity_seq(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for pane_input_time. */
+static void *
+format_cb_pane_input_time(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (&ft->wp->pane_input_time);
+	return (NULL);
+}
+
+/* Callback for pane_input_seq. */
+static void *
+format_cb_pane_input_seq(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->pane_input_seq));
+	return (NULL);
+}
+
 /* Callback for pane_at_left. */
 static void *
 format_cb_pane_at_left(struct format_tree *ft)
@@ -2291,6 +2310,16 @@ format_cb_pane_output_bytes(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for pane_input_bytes. */
+static void *
+format_cb_pane_input_bytes(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%llu",
+		    (unsigned long long)ft->wp->pane_input_bytes));
+	return (NULL);
+}
+
 static const char *
 format_whisp_shell_state_string(enum whisp_shell_state state)
 {
@@ -2448,6 +2477,12 @@ format_cb_whisp_pane_status_json(struct format_tree *ft)
 	    (long long)wp->pane_activity.tv_sec);
 	evbuffer_add_printf(buffer, ",\"pane_output_bytes\":%llu",
 	    (unsigned long long)wp->pane_output_bytes);
+	evbuffer_add_printf(buffer, ",\"pane_input_seq\":%llu",
+	    (unsigned long long)wp->pane_input_seq);
+	evbuffer_add_printf(buffer, ",\"pane_input_time\":%lld",
+	    (long long)wp->pane_input_time.tv_sec);
+	evbuffer_add_printf(buffer, ",\"pane_input_bytes\":%llu",
+	    (unsigned long long)wp->pane_input_bytes);
 	evbuffer_add(buffer, ",", 1);
 	format_whisp_json_string_field(buffer, "session_name",
 	    ft->s != NULL ? ft->s->name : "");
@@ -3719,8 +3754,17 @@ static const struct format_table_entry format_table[] = {
 	{ "pane_index", FORMAT_TABLE_STRING,
 	  format_cb_pane_index
 	},
+	{ "pane_input_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_bytes
+	},
 	{ "pane_input_off", FORMAT_TABLE_STRING,
 	  format_cb_pane_input_off
+	},
+	{ "pane_input_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_seq
+	},
+	{ "pane_input_time", FORMAT_TABLE_TIME,
+	  format_cb_pane_input_time
 	},
 	{ "pane_key_mode", FORMAT_TABLE_STRING,
 	  format_cb_pane_key_mode

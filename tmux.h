@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 4
+#define WHISP_TMUX_PROTOCOL_VERSION 3
 
 extern char   **environ;
 
@@ -1247,6 +1247,9 @@ struct window_pane {
 	struct timeval	 pane_activity;
 	uint64_t	 pane_activity_seq;
 	uint64_t	 pane_output_bytes;
+	struct timeval	 pane_input_time;
+	uint64_t	 pane_input_seq;
+	uint64_t	 pane_input_bytes;
 	enum whisp_shell_state whisp_shell_state;
 	uint64_t	 whisp_shell_seq;
 	pid_t		 whisp_shell_pid;
@@ -3405,6 +3408,8 @@ struct window	*window_find_by_id_str(const char *);
 struct window	*window_find_by_id(u_int);
 void		 window_update_activity(struct window *);
 void		 window_pane_update_activity(struct window_pane *, size_t);
+void		 window_pane_update_input(struct window_pane *, size_t);
+int		 window_pane_write(struct window_pane *, const void *, size_t);
 struct window	*window_create(u_int, u_int, u_int, u_int);
 void		 window_pane_set_event(struct window_pane *);
 struct window_pane *window_get_active_at(struct window *, u_int, u_int);
