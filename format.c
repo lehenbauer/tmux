@@ -2396,14 +2396,18 @@ format_whisp_json_string_field(struct evbuffer *buffer, const char *name,
 }
 
 static void
-format_whisp_shell_json(struct evbuffer *buffer, struct window_pane *wp)
+format_whisp_shell_json(struct evbuffer *buffer, struct window_pane *wp,
+    int include_pane_id)
 {
 	uint64_t	started_at_ms, finished_at_ms;
 
 	started_at_ms = format_whisp_time_ms(&wp->whisp_shell_started_at);
 	finished_at_ms = format_whisp_time_ms(&wp->whisp_shell_finished_at);
 
-	evbuffer_add_printf(buffer, "{\"supported\":true,\"state\":");
+	evbuffer_add_printf(buffer, "{\"supported\":true");
+	if (include_pane_id)
+		evbuffer_add_printf(buffer, ",\"pane_id\":\"%%%u\"", wp->id);
+	evbuffer_add_printf(buffer, ",\"state\":");
 	format_whisp_json_string(buffer,
 	    format_whisp_shell_state_string(wp->whisp_shell_state));
 	evbuffer_add_printf(buffer, ",\"seq\":%llu",
@@ -2448,7 +2452,7 @@ format_cb_whisp_shell_status_json(struct format_tree *ft)
 	buffer = evbuffer_new();
 	if (buffer == NULL)
 		fatalx("out of memory");
-	format_whisp_shell_json(buffer, ft->wp);
+	format_whisp_shell_json(buffer, ft->wp, 1);
 	size = EVBUFFER_LENGTH(buffer);
 	xasprintf(&value, "%.*s", size, EVBUFFER_DATA(buffer));
 	evbuffer_free(buffer);
@@ -2502,7 +2506,7 @@ format_cb_whisp_pane_status_json(struct format_tree *ft)
 	evbuffer_add(buffer, ",", 1);
 	format_whisp_json_string_field(buffer, "pane_title", wp->base.title);
 	evbuffer_add_printf(buffer, ",\"shell\":");
-	format_whisp_shell_json(buffer, wp);
+	format_whisp_shell_json(buffer, wp, 0);
 	evbuffer_add(buffer, "}", 1);
 
 	size = EVBUFFER_LENGTH(buffer);
