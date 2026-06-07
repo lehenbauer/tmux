@@ -60,11 +60,11 @@
 	" '#{?mouse_hyperlink,Type #[underscore]#{=/9/...:mouse_hyperlink},}' 'C-h' {copy-mode -q; send-keys -l -- \"#{q:mouse_hyperlink}\"}" \
 	" '#{?mouse_hyperlink,Copy #[underscore]#{=/9/...:mouse_hyperlink},}' 'h' {copy-mode -q; set-buffer -- \"#{q:mouse_hyperlink}\"}" \
 	" ''" \
-	" 'Horizontal Split' 'h' {split-window -h}" \
-	" 'Vertical Split' 'v' {split-window -v}" \
+	" '#{?#{!:#{pane_floating_flag}},Horizontal Split,}' 'h' {split-window -h}" \
+	" '#{?#{!:#{pane_floating_flag}},Vertical Split,}' 'v' {split-window -v}" \
 	" ''" \
-	" '#{?#{>:#{window_panes},1},,-}Swap Up' 'u' {swap-pane -U}" \
-	" '#{?#{>:#{window_panes},1},,-}Swap Down' 'd' {swap-pane -D}" \
+	" '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Up,}' 'u' {swap-pane -U}" \
+	" '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Down,}' 'd' {swap-pane -D}" \
 	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-pane}" \
 	" ''" \
 	" 'Kill' 'X' {kill-pane}" \
@@ -362,6 +362,7 @@ key_bindings_init(void)
 		"bind -N 'Split window horizontally' % { split-window -h }",
 		"bind -N 'Kill current window' & { confirm-before -p\"kill-window #W? (y/n)\" kill-window }",
 		"bind -N 'Prompt for window index to select' \"'\" { command-prompt -T window-target -pindex { select-window -t ':%%' } }",
+		"bind -N 'New floating pane' * { new-pane }",
 		"bind -N 'Switch to previous client' ( { switch-client -p }",
 		"bind -N 'Switch to next client' ) { switch-client -n }",
 		"bind -N 'Rename current window' , { command-prompt -I'#W' { rename-window -- '%%' } }",

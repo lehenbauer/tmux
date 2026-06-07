@@ -497,6 +497,18 @@ window_pane_send_resize(struct window_pane *wp, u_int sx, u_int sy)
 }
 
 int
+window_has_floating_panes(struct window *w)
+{
+	struct window_pane	*wp;
+
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (window_pane_is_floating(wp))
+			return (1);
+	}
+	return (0);
+}
+
+int
 window_has_pane(struct window *w, struct window_pane *wp)
 {
 	struct window_pane	*wp1;
@@ -630,7 +642,7 @@ window_redraw_active_switch(struct window *w, struct window_pane *wp)
 			break;
 
 		/* If the pane is floating, move to the front. */
-		if (wp->flags & PANE_FLOATING) {
+		if (window_pane_is_floating(wp)) {
 			TAILQ_REMOVE(&w->z_index, wp, zentry);
 			TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
 			wp->flags |= PANE_REDRAW;
@@ -655,7 +667,7 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 		if (!window_pane_visible(wp))
 			continue;
 		window_pane_full_size_offset(wp, &xoff, &yoff, &sx, &sy);
-		if (~wp->flags & PANE_FLOATING) {
+		if (!window_pane_is_floating(wp)) {
 			/* Tiled - to and including bottom or right border. */
 			if ((int)x < xoff || x > xoff + sx)
 				continue;
@@ -667,16 +679,11 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 					continue;
 			}
 		} else {
-			/* Floating - include top or or left border. */
+			/* Floating - include all borders. */
 			if ((int)x < xoff - 1 || x > xoff + sx)
 				continue;
-			if (pane_status == PANE_STATUS_TOP) {
-				if ((int)y <= yoff - 2 || y > yoff + sy - 1)
-					continue;
-			} else {
-				if ((int)y < yoff - 1 || y > yoff + sy)
-					continue;
-			}
+			if ((int)y < yoff - 1 || y > yoff + sy)
+				continue;
 		}
 		return (wp);
 	}
@@ -829,7 +836,6 @@ window_add_pane(struct window *w, struct window_pane *other, u_int hlimit,
 	if (~flags & SPAWN_FLOATING)
 		TAILQ_INSERT_TAIL(&w->z_index, wp, zentry);
 	else {
-		wp->flags |= PANE_FLOATING;
 		TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
 	}
 	return (wp);
@@ -910,8 +916,8 @@ window_pane_previous_by_number(struct window *w, struct window_pane *wp,
 int
 window_pane_index(struct window_pane *wp, u_int *i)
 {
-	struct window_pane	*wq;
 	struct window		*w = wp->window;
+	struct window_pane	*wq;
 
 	*i = options_get_number(w->options, "pane-base-index");
 	TAILQ_FOREACH(wq, &w->panes, entry) {
@@ -924,6 +930,26 @@ window_pane_index(struct window_pane *wp, u_int *i)
 	return (-1);
 }
 
+int
+window_pane_zindex(struct window_pane *wp, u_int *i)
+{
+	struct window		*w = wp->window;
+	struct window_pane	*wq;
+
+	*i = 0;
+	TAILQ_FOREACH(wq, &w->z_index, zentry) {
+		if (wq == wp) {
+			if (!window_pane_is_floating(wp))
+				(*i)++;
+			return (0);
+		}
+		if (window_pane_is_floating(wq))
+			(*i)++;
+	}
+
+	return (-1);
+}
+
 u_int
 window_count_panes(struct window *w, int with_floating)
 {
@@ -931,7 +957,7 @@ window_count_panes(struct window *w, int with_floating)
 	u_int			 n = 0;
 
 	TAILQ_FOREACH(wp, &w->panes, entry) {
-		if (with_floating || ~wp->flags & PANE_FLOATING)
+		if (with_floating || !window_pane_is_floating(wp))
 			n++;
 	}
 	return (n);
@@ -996,7 +1022,7 @@ window_pane_printable_flags(struct window_pane *wp)
 		flags[pos++] = '-';
 	if (wp->flags & PANE_ZOOMED)
 		flags[pos++] = 'Z';
-	if (wp->flags & PANE_FLOATING)
+	if (window_pane_is_floating(wp))
 		flags[pos++] = 'F';
 	flags[pos] = '\0';
 	return (flags);
@@ -2106,112 +2132,12 @@ window_pane_border_status_get_range(struct window_pane *wp, u_int x, u_int y)
 	return (style_ranges_get_range(srs, x - wp->xoff - 2));
 }
 
-/* Work out geometry for tiled panes. */
 int
-window_pane_tiled_geometry(struct window *w, struct window_pane *wp,
-    int *out_size, int *out_flags, enum layout_type *out_type,
-    struct cmdq_item *item, struct args *args, char **cause)
+window_pane_is_floating(struct window_pane *wp)
 {
-	int			size = -1, flags = *out_flags;
-	enum layout_type	type;
-	u_int			curval = 0;
+	struct layout_cell	*lc = wp->layout_cell;
 
-	type = LAYOUT_TOPBOTTOM;
-	if (args_has(args, 'h'))
-		type = LAYOUT_LEFTRIGHT;
-
-	if (args_has(args, 'l') || args_has(args, 'p')) {
-		if (args_has(args, 'f')) {
-			if (type == LAYOUT_TOPBOTTOM)
-				curval = w->sy;
-			else
-				curval = w->sx;
-		} else {
-			if (type == LAYOUT_TOPBOTTOM)
-				curval = wp->sy;
-			else
-				curval = wp->sx;
-		}
-	}
-
-	if (args_has(args, 'l')) {
-		size = args_percentage_and_expand(args, 'l', 0, INT_MAX, curval,
-		    item, cause);
-	} else if (args_has(args, 'p')) {
-		size = args_strtonum_and_expand(args, 'p', 0, 100, item,
-		    cause);
-		if (cause == NULL)
-			size = curval * size / 100;
-	}
-	if (*cause != NULL)
-		return (-1);
-
-	if (args_has(args, 'b'))
-		flags |= SPAWN_BEFORE;
-	if (args_has(args, 'f'))
-		flags |= SPAWN_FULLSIZE;
-
-	*out_size = size;
-	*out_flags = flags;
-	*out_type = type;
-	return (0);
-}
-
-/* Work out geometry for floating panes. */
-int
-window_pane_floating_geometry(struct window *w, __unused struct window_pane *wp,
-    u_int *out_x, u_int *out_y, u_int *out_sx, u_int *out_sy,
-    struct cmdq_item *item, struct args *args, char **cause)
-{
-	u_int	x, y, sx = w->sx / 2, sy = w->sy / 2;
-
-	if (args_has(args, 'x')) {
-		sx = args_percentage_and_expand(args, 'x', 0, USHRT_MAX, w->sx,
-		    item, cause);
-		if (*cause != NULL)
-			return (-1);
-	}
-	if (args_has(args, 'y')) {
-		sy = args_percentage_and_expand(args, 'y', 0, USHRT_MAX, w->sy,
-		    item, cause);
-		if (*cause != NULL)
-			return (-1);
-	}
-
-	if (args_has(args, 'X')) {
-		x = args_percentage_and_expand(args, 'X', 0, USHRT_MAX, w->sx,
-		    item, cause);
-		if (*cause != NULL)
-			return (-1);
-	} else {
-		if (w->last_new_pane_x == 0)
-			x = 4;
-		else {
-			x = w->last_new_pane_x + 4;
-			if (w->last_new_pane_x > w->sx)
-				x = 4;
-		}
-		w->last_new_pane_x = x;
-	}
-	if (args_has(args, 'Y')) {
-		y = args_percentage_and_expand(args, 'Y', 0, USHRT_MAX, w->sy,
-		    item, cause);
-		if (*cause != NULL)
-			return (-1);
-	} else {
-		if (w->last_new_pane_y == 0)
-			y = 2;
-		else {
-			y = w->last_new_pane_y + 2;
-			if (w->last_new_pane_y > w->sy)
-				y = 2;
-		}
-		w->last_new_pane_y = y;
-	}
-
-	*out_x = x;
-	*out_y = y;
-	*out_sx = sx;
-	*out_sy = sy;
-	return (0);
+	if (lc == NULL || (lc->flags & LAYOUT_CELL_FLOATING) == 0)
+		return (0);
+	return (1);
 }

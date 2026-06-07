@@ -1295,7 +1295,7 @@ struct window_pane {
 #define PANE_FOCUSED 0x4
 #define PANE_VISITED 0x8
 #define PANE_ZOOMED 0x10
-#define PANE_FLOATING 0x20
+/* 0x20 unused */
 #define PANE_INPUTOFF 0x40
 #define PANE_CHANGED 0x80
 #define PANE_EXITED 0x100
@@ -1356,6 +1356,8 @@ struct window_pane {
 
 	int		 border_gc_set;
 	struct grid_cell border_gc;
+	int		 active_border_gc_set;
+	struct grid_cell active_border_gc;
 
 	int		 control_bg;
 	int		 control_fg;
@@ -1487,7 +1489,6 @@ TAILQ_HEAD(winlink_stack, winlink);
 enum layout_type {
 	LAYOUT_LEFTRIGHT,
 	LAYOUT_TOPBOTTOM,
-	LAYOUT_FLOATING,
 	LAYOUT_WINDOWPANE
 };
 
@@ -1497,6 +1498,9 @@ TAILQ_HEAD(layout_cells, layout_cell);
 /* Layout cell. */
 struct layout_cell {
 	enum layout_type type;
+
+#define LAYOUT_CELL_FLOATING 0x1
+	int		 flags;
 
 	struct layout_cell *parent;
 
@@ -1766,9 +1770,8 @@ struct tty_ctx {
 #define TTY_CTX_WINDOW_BIGGER 0x4
 #define TTY_CTX_SYNC 0x8
 #define TTY_CTX_OVERLAY_SYNC 0x10
-#define TTY_CTX_CELL_DRAW_LINE 0x20
-#define TTY_CTX_CELL_INVALIDATE 0x40
-#define TTY_CTX_PANE_OBSCURED 0x80
+#define TTY_CTX_CELL_INVALIDATE 0x20
+#define TTY_CTX_PANE_OBSCURED 0x40
 
 	union {
 		u_int			 n;
@@ -2400,6 +2403,7 @@ enum sort_order {
 	SORT_NAME,
 	SORT_ORDER,
 	SORT_SIZE,
+	SORT_Z,
 	SORT_END,
 };
 
@@ -3384,7 +3388,7 @@ void	 screen_redraw_screen(struct client *);
 void	 screen_redraw_pane(struct client *, struct window_pane *, int);
 int	 screen_redraw_is_visible(struct visible_ranges *, u_int);
 struct visible_ranges *screen_redraw_get_visible_ranges(struct window_pane *,
-	     u_int, u_int, u_int, struct visible_ranges *);
+	     int, int, u_int, struct visible_ranges *);
 
 /* screen.c */
 void	 screen_init(struct screen *, u_int, u_int, u_int);
@@ -3448,6 +3452,7 @@ struct window	*window_create(u_int, u_int, u_int, u_int);
 void		 window_pane_set_event(struct window_pane *);
 struct window_pane *window_get_active_at(struct window *, u_int, u_int);
 struct window_pane *window_find_string(struct window *, const char *);
+int		 window_has_floating_panes(struct window *);
 int		 window_has_pane(struct window *, struct window_pane *);
 int		 window_set_active_pane(struct window *, struct window_pane *,
 		     int);
@@ -3471,6 +3476,7 @@ struct window_pane *window_pane_next_by_number(struct window *,
 struct window_pane *window_pane_previous_by_number(struct window *,
 			struct window_pane *, u_int);
 int		 window_pane_index(struct window_pane *, u_int *);
+int		 window_pane_zindex(struct window_pane *, u_int *);
 u_int		 window_count_panes(struct window *, int);
 void		 window_destroy_panes(struct window *);
 struct window_pane *window_pane_find_by_id_str(const char *);
@@ -3525,12 +3531,7 @@ enum client_theme window_pane_get_theme(struct window_pane *);
 void		 window_pane_send_theme_update(struct window_pane *);
 struct style_range *window_pane_border_status_get_range(struct window_pane *,
 			u_int, u_int);
-int              window_pane_tiled_geometry(struct window *,
-		     struct window_pane *, int *, int *, enum layout_type *,
-		     struct cmdq_item *, struct args *, char **);
-int              window_pane_floating_geometry(struct window *,
-		     struct window_pane *, u_int *, u_int *, u_int *, u_int *,
-		     struct cmdq_item *, struct args *, char **);
+int		 window_pane_is_floating(struct window_pane *);
 
 /* layout.c */
 u_int		 layout_count_cells(struct layout_cell *);
@@ -3561,9 +3562,15 @@ void		 layout_assign_pane(struct layout_cell *, struct window_pane *,
 		     int);
 struct layout_cell *layout_split_pane(struct window_pane *, enum layout_type,
 		     int, int);
+struct layout_cell *layout_floating_pane(struct window *, u_int, u_int, int,
+		     int);
 void		 layout_close_pane(struct window_pane *);
 int		 layout_spread_cell(struct window *, struct layout_cell *);
 void		 layout_spread_out(struct window_pane *);
+struct layout_cell *layout_get_floating_cell(struct cmdq_item *, struct args *,
+		     struct window *, struct window_pane *, char **);
+struct layout_cell *layout_get_tiled_cell(struct cmdq_item *, struct args *,
+		     struct window *, struct window_pane *, int, char **);
 
 /* layout-custom.c */
 char		*layout_dump(struct window *, struct layout_cell *);
@@ -3641,7 +3648,7 @@ void printflike(3, 4) window_copy_add(struct window_pane *, int, const char *,
 		     ...);
 void printflike(3, 0) window_copy_vadd(struct window_pane *, int, const char *,
 		     va_list);
-void		 window_copy_scroll(struct window_pane *, int, u_int, int);
+void		 window_copy_scroll(struct window_pane *, int, u_int, u_int, int);
 void		 window_copy_pageup(struct window_pane *, int);
 void		 window_copy_pagedown(struct window_pane *, int, int);
 void		 window_copy_start_drag(struct client *, struct mouse_event *);

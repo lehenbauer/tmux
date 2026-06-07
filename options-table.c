@@ -188,7 +188,7 @@ static const char *options_table_copy_mode_line_numbers_list[] = {
 			"#{E:pane-status-style}" \
 		"]" \
 		"#[push-default]" \
-		"#P[#{pane_width}x#{pane_height}]" \
+		"#{T:window-pane-status-format}" \
 		"#[pop-default]" \
 		"#[norange list=on default]  " \
 	"," \
@@ -199,7 +199,7 @@ static const char *options_table_copy_mode_line_numbers_list[] = {
 			"}" \
 		"]" \
 		"#[push-default]" \
-		"#P[#{pane_width}x#{pane_height}]*" \
+		"#{T:window-pane-current-status-format}" \
 		"#[pop-default]" \
 		"#[norange list=on default] " \
 	"}"
@@ -1028,7 +1028,8 @@ const struct options_table_entry options_table[] = {
 	  .flags = OPTIONS_TABLE_IS_ARRAY,
 	  .default_str = "DISPLAY KRB5CCNAME MSYSTEM SSH_ASKPASS SSH_AUTH_SOCK "
 			 "SSH_AGENT_PID SSH_CONNECTION WAYLAND_DISPLAY "
-			 "WINDOWID XAUTHORITY",
+			 "WINDOWID XAUTHORITY XDG_CURRENT_DESKTOP "
+			 "XDG_SESSION_DESKTOP XDG_SESSION_TYPE",
 	  .text = "List of environment variables to update in the session "
 		  "environment when a client is attached."
 	},
@@ -1516,6 +1517,21 @@ const struct options_table_entry options_table[] = {
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Default style of the active pane."
+	},
+
+	{ .name = "window-pane-current-status-format",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .default_str = "#P:[#T]#{?pane_flags,#{pane_flags}, }",
+	  .text = "Format of the current window pane in the status line."
+	},
+
+	{ .name = "window-pane-status-format",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .default_str = "#P:[#T]#{?pane_flags,#{pane_flags}, }",
+	  .text = "Format of window panes in the status line, except the "
+		  "current pane."
 	},
 
 	{ .name = "window-size",

@@ -116,6 +116,7 @@ format_job_cmp(struct format_job *fj1, struct format_job *fj2)
 #define FORMAT_NOT 0x80000
 #define FORMAT_NOT_NOT 0x100000
 #define FORMAT_REPEAT 0x200000
+#define FORMAT_QUOTE_ARGUMENTS 0x400000
 
 /* Limit on recursion. */
 #define FORMAT_LOOP_LIMIT 100
@@ -1035,7 +1036,7 @@ format_cb_pane_floating_flag(struct format_tree *ft)
 	struct window_pane	*wp = ft->wp;
 
 	if (wp != NULL) {
-		if (wp->flags & PANE_FLOATING)
+		if (window_pane_is_floating(wp))
 			return (xstrdup("1"));
 		return (xstrdup("0"));
 	}
@@ -2732,6 +2733,35 @@ format_cb_pane_width(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for pane_x. */
+static void *
+format_cb_pane_x(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%d", ft->wp->xoff));
+	return (NULL);
+}
+
+/* Callback for pane_y. */
+static void *
+format_cb_pane_y(struct format_tree *ft)
+{
+	if (ft->wp != NULL)
+		return (format_printf("%d", ft->wp->yoff));
+	return (NULL);
+}
+
+/* Callback for pane_z. */
+static void *
+format_cb_pane_z(struct format_tree *ft)
+{
+	u_int	idx;
+
+	if (ft->wp != NULL && window_pane_zindex(ft->wp, &idx) == 0)
+		return (format_printf("%u", idx));
+	return (NULL);
+}
+
 /* Callback for pane_zoomed_flag. */
 static void *
 format_cb_pane_zoomed_flag(struct format_tree *ft)
@@ -3846,6 +3876,15 @@ static const struct format_table_entry format_table[] = {
 	{ "pane_width", FORMAT_TABLE_STRING,
 	  format_cb_pane_width
 	},
+	{ "pane_x", FORMAT_TABLE_STRING,
+	  format_cb_pane_x
+	},
+	{ "pane_y", FORMAT_TABLE_STRING,
+	  format_cb_pane_y
+	},
+	{ "pane_z", FORMAT_TABLE_STRING,
+	  format_cb_pane_z
+	},
 	{ "pane_zoomed_flag", FORMAT_TABLE_STRING,
 	  format_cb_pane_zoomed_flag
 	},
@@ -4521,6 +4560,11 @@ found:
 	if (modifiers & FORMAT_QUOTE_STYLE) {
 		saved = found;
 		found = format_quote_style(saved);
+		free(saved);
+	}
+	if (modifiers & FORMAT_QUOTE_ARGUMENTS) {
+		saved = found;
+		found = args_escape(saved);
 		free(saved);
 	}
 	return (found);
@@ -5496,6 +5540,8 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 				else if (strchr(fm->argv[0], 'e') != NULL ||
 				    strchr(fm->argv[0], 'h') != NULL)
 					modifiers |= FORMAT_QUOTE_STYLE;
+				else if (strchr(fm->argv[0], 'a') != NULL)
+					modifiers |= FORMAT_QUOTE_ARGUMENTS;
 				break;
 			case 'E':
 				modifiers |= FORMAT_EXPAND;
