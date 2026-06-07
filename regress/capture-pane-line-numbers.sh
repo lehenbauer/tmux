@@ -72,6 +72,30 @@ $TMUX capturep -pLP >$TMP 2>&1 && exit 1
 grep -- '-L and -P are incompatible' $TMP >/dev/null || exit 1
 
 $TMUX kill-server 2>/dev/null
+$TMUX -f/dev/null new -d -x5 -y5 'printf "abcdef\nnext\n"; sleep 5' ||
+	exit 1
+sleep 1
+
+$TMUX capturep -pL -S0 -E2 >$TMP || exit 1
+anchor=$(awk -F '	' 'NR == 3 { print $1 }' $TMP)
+test -n "$anchor" || exit 1
+
+$TMUX whisp-capture-pane -B "$anchor" -n 2 >$TMP || exit 1
+awk '
+	NR == 1 { if ($0 !~ /^cursor=[0-9]+	count=2$/) exit 1 }
+	NR == 2 { if ($0 != "abcde") exit 1 }
+	NR == 3 { if ($0 != "f") exit 1 }
+	END { if (NR != 3) exit 1 }
+' $TMP || exit 1
+
+$TMUX whisp-capture-pane -B "$anchor" -n 2 -J >$TMP || exit 1
+awk '
+	NR == 1 { if ($0 !~ /^cursor=[0-9]+	count=2$/) exit 1 }
+	NR == 2 { if ($0 != "abcdef") exit 1 }
+	END { if (NR != 2) exit 1 }
+' $TMP || exit 1
+
+$TMUX kill-server 2>/dev/null
 $TMUX -f/dev/null start-server \; set -g history-limit 3 \; \
 	new -d -x20 -y3 'i=1; while [ $i -le 12 ]; do printf "l%02d\n" $i; i=$((i + 1)); done; sleep 5' ||
 	exit 1
