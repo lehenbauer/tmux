@@ -48,8 +48,8 @@ const struct cmd_entry cmd_whisp_capture_pane_entry = {
 	.name = "whisp-capture-pane",
 	.alias = NULL,
 
-	.args = { "A:B:CeNn:qTt:", 0, 0, NULL },
-	.usage = "[-CeNqT] [-A after-line | -B before-line] -n lines "
+	.args = { "A:B:CeJNn:qTt:", 0, 0, NULL },
+	.usage = "[-CeJNqT] [-A after-line | -B before-line] -n lines "
 		 CMD_TARGET_PANE_USAGE,
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -159,15 +159,16 @@ cmd_whisp_capture_pane_lines(struct args *args, struct window_pane *wp,
 	char			*buf = NULL, *line, header[64];
 	size_t			 linelen;
 	u_int			 i, sx = screen_size_x(s);
-	int			 flags = 0;
+	int			 flags = 0, join_lines;
 
+	join_lines = args_has(args, 'J');
 	if (args_has(args, 'e'))
 		flags |= GRID_STRING_WITH_SEQUENCES;
 	if (args_has(args, 'C'))
 		flags |= GRID_STRING_ESCAPE_SEQUENCES;
-	if (!args_has(args, 'T'))
+	if (!join_lines && !args_has(args, 'T'))
 		flags |= GRID_STRING_EMPTY_CELLS;
-	if (!args_has(args, 'N'))
+	if (!join_lines && !args_has(args, 'N'))
 		flags |= GRID_STRING_TRIM_SPACES;
 
 	xsnprintf(header, sizeof header, "cursor=%llu\tcount=%u\n",
@@ -182,7 +183,8 @@ cmd_whisp_capture_pane_lines(struct args *args, struct window_pane *wp,
 		line = grid_string_cells(gd, 0, i, sx, &gc, flags, s);
 		linelen = strlen(line);
 		buf = cmd_whisp_capture_pane_append(buf, len, line, linelen);
-		buf[(*len)++] = '\n';
+		if (!join_lines || !(gl->flags & GRID_LINE_WRAPPED))
+			buf[(*len)++] = '\n';
 
 		free(line);
 	}
