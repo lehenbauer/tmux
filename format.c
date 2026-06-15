@@ -117,6 +117,10 @@ format_job_cmp(struct format_job *fj1, struct format_job *fj2)
 #define FORMAT_NOT_NOT 0x100000
 #define FORMAT_REPEAT 0x200000
 #define FORMAT_QUOTE_ARGUMENTS 0x400000
+#define FORMAT_RELATIVE 0x800000
+#define FORMAT_CLIENT_TERMCAP 0x1000000
+#define FORMAT_CLIENT_TERMFEAT 0x2000000
+#define FORMAT_CLIENT_ENVIRON 0x4000000
 
 /* Limit on recursion. */
 #define FORMAT_LOOP_LIMIT 100
@@ -1153,15 +1157,13 @@ static void *
 format_cb_pane_at_top(struct format_tree *ft)
 {
 	struct window_pane	*wp = ft->wp;
-	struct window		*w;
 	int			 status, flag;
 	char			*value;
 
 	if (wp == NULL)
 		return (NULL);
-	w = wp->window;
 
-	status = options_get_number(w->options, "pane-border-status");
+	status = window_pane_get_pane_status(wp);
 	if (status == PANE_STATUS_TOP)
 		flag = (wp->yoff == 1);
 	else
@@ -1183,7 +1185,7 @@ format_cb_pane_at_bottom(struct format_tree *ft)
 		return (NULL);
 	w = wp->window;
 
-	status = options_get_number(w->options, "pane-border-status");
+	status = window_pane_get_pane_status(wp);
 	if (status == PANE_STATUS_BOTTOM)
 		flag = (wp->yoff + (int)wp->sy == (int)w->sy - 1);
 	else
@@ -4002,6 +4004,24 @@ static const struct format_table_entry format_table[] = {
 	{ "version", FORMAT_TABLE_STRING,
 	  format_cb_version
 	},
+	{ "whisp_pane_activity", FORMAT_TABLE_TIME,
+	  format_cb_pane_activity
+	},
+	{ "whisp_pane_activity_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_activity_seq
+	},
+	{ "whisp_pane_input_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_bytes
+	},
+	{ "whisp_pane_input_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_seq
+	},
+	{ "whisp_pane_input_time", FORMAT_TABLE_TIME,
+	  format_cb_pane_input_time
+	},
+	{ "whisp_pane_output_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_output_bytes
+	},
 	{ "whisp_pane_status_json", FORMAT_TABLE_STRING,
 	  format_cb_whisp_pane_status_json
 	},
@@ -4153,7 +4173,7 @@ format_table_compare(const void *key0, const void *entry0)
 }
 
 /* Get a format callback. */
-static struct format_table_entry *
+static const struct format_table_entry *
 format_table_get(const char *key)
 {
 	return (bsearch(key, format_table, nitems(format_table),
@@ -4442,12 +4462,52 @@ format_pretty_time(time_t t, int seconds)
 	return (xstrdup(s));
 }
 
+/* Make a relative time. */
+static char *
+format_relative_time(time_t t)
+{
+	time_t	now, age;
+	u_int	d, h, m, s;
+	char	out[32];
+
+	time(&now);
+	if (t > now)
+		return (NULL);
+	if (t == now)
+		return (xstrdup("0s"));
+	age = now - t;
+
+	d = age / 86400;
+	h = (age % 86400) / 3600;
+	m = (age % 3600) / 60;
+	s = age % 60;
+
+	if (d != 0) {
+		if (h != 0)
+			xsnprintf(out, sizeof out, "%ud%uh", d, h);
+		else
+			xsnprintf(out, sizeof out, "%ud", d);
+	} else if (h != 0) {
+		if (m != 0)
+			xsnprintf(out, sizeof out, "%uh%um", h, m);
+		else
+			xsnprintf(out, sizeof out, "%uh", h);
+	} else if (m != 0) {
+		if (s != 0)
+			xsnprintf(out, sizeof out, "%um%us", m, s);
+		else
+			xsnprintf(out, sizeof out, "%um", m);
+	} else
+		xsnprintf(out, sizeof out, "%us", s);
+	return (xstrdup(out));
+}
+
 /* Find a format entry. */
 static char *
 format_find(struct format_tree *ft, const char *key, int modifiers,
     const char *time_format)
 {
-	struct format_table_entry	*fte;
+	const struct format_table_entry	*fte;
 	void				*value;
 	struct format_entry		*fe, fe_find;
 	struct environ_entry		*envent;
@@ -4523,7 +4583,9 @@ found:
 		}
 		if (t == 0)
 			return (NULL);
-		if (modifiers & FORMAT_PRETTY)
+		if (modifiers & FORMAT_RELATIVE)
+			found = format_relative_time(t);
+		else if (modifiers & FORMAT_PRETTY)
 			found = format_pretty_time(t, 0);
 		else {
 			if (time_format != NULL) {
@@ -4758,7 +4820,7 @@ format_build_modifiers(struct format_expand_state *es, const char **s,
 
 	/*
 	 * Modifiers are a ; separated list of the forms:
-	 *	l,m,C,a,b,c,d,n,t,w,q,E,T,S,W,P,R,<,>
+	 *	l,m,C,a,b,c,d,I,n,t,w,q,E,T,S,W,P,R,<,>
 	 *	=a
 	 *	=/a
 	 *	=/a/
@@ -4799,7 +4861,7 @@ format_build_modifiers(struct format_expand_state *es, const char **s,
 		}
 
 		/* Now try single character with arguments. */
-		if (strchr("mCLNPSst=pReqW", cp[0]) == NULL)
+		if (strchr("ImCLNPSst=pReqW", cp[0]) == NULL)
 			break;
 		c = cp[0];
 
@@ -5440,6 +5502,7 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 	struct format_modifier		 *bool_op_n = NULL;
 	u_int				  i, count, nsub = 0, nrep;
 	struct format_expand_state	  next;
+	struct environ_entry		 *envent;
 
 	/* Set sorting defaults. */
 	sc->order = SORT_ORDER;
@@ -5522,16 +5585,29 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 			case 'n':
 				modifiers |= FORMAT_LENGTH;
 				break;
+			case 'I':
+				if (fm->argc < 1)
+					break;
+				if (strchr(fm->argv[0], 'f') != NULL)
+					modifiers |= FORMAT_CLIENT_TERMFEAT;
+				if (strchr(fm->argv[0], 'c') != NULL)
+					modifiers |= FORMAT_CLIENT_TERMCAP;
+				if (strchr(fm->argv[0], 'e') != NULL)
+					modifiers |= FORMAT_CLIENT_ENVIRON;
+				break;
 			case 't':
 				modifiers |= FORMAT_TIMESTRING;
 				if (fm->argc < 1)
 					break;
 				if (strchr(fm->argv[0], 'p') != NULL)
 					modifiers |= FORMAT_PRETTY;
+				else if (strchr(fm->argv[0], 'r') != NULL)
+					modifiers |= FORMAT_RELATIVE;
 				else if (fm->argc >= 2 &&
 				    strchr(fm->argv[0], 'f') != NULL) {
 					free(time_format);
-					time_format = format_strip(es, fm->argv[1]);
+					time_format = format_strip(es,
+					    fm->argv[1]);
 				}
 				break;
 			case 'q':
@@ -5644,6 +5720,38 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 			    strcmp(fm->modifier, "<=") == 0)
 				cmp = fm;
 		}
+	}
+
+	/* Look up client capability, feature or environment. */
+	if ((modifiers & FORMAT_CLIENT_TERMCAP) ||
+	    (modifiers & FORMAT_CLIENT_TERMFEAT) ||
+	    (modifiers & FORMAT_CLIENT_ENVIRON)) {
+		if (ft->c == NULL ||
+		    ft->c->tty.term == NULL ||
+		    ft->c->flags & CLIENT_UNATTACHEDFLAGS) {
+			value = xstrdup("");
+			goto done;
+		}
+		if (modifiers & FORMAT_CLIENT_TERMCAP) {
+			if (tty_term_has_name(ft->c->tty.term, copy))
+				value = xstrdup("1");
+			else
+				value = xstrdup("0");
+		}
+		if (modifiers & FORMAT_CLIENT_TERMFEAT) {
+			if (tty_feature_present(ft->c->tty.term, copy))
+				value = xstrdup("1");
+			else
+				value = xstrdup("0");
+		}
+		if (modifiers & FORMAT_CLIENT_ENVIRON) {
+			envent = environ_find(ft->c->environ, copy);
+			if (envent != NULL && envent->value != NULL)
+				value = xstrdup(envent->value);
+			else
+				value = xstrdup("");
+		}
+		goto done;
 	}
 
 	/* Is this a literal string? */

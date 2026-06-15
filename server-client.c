@@ -603,15 +603,14 @@ server_client_check_mouse_in_pane(struct window_pane *wp, int px, int py,
     u_int *sl_mpos)
 {
 	struct window		*w = wp->window;
-	struct options		*wo = w->options;
 	struct window_pane	*fwp;
 	int			 pane_status, sb, sb_pos, sb_w, sb_pad;
 	int			 pane_status_line, sl_top, sl_bottom;
 	int			 bdr_bottom, bdr_top, bdr_left, bdr_right;
 
-	sb = options_get_number(wo, "pane-scrollbars");
-	sb_pos = options_get_number(wo, "pane-scrollbars-position");
-	pane_status = options_get_number(wo, "pane-border-status");
+	sb = options_get_number(w->options, "pane-scrollbars");
+	sb_pos = options_get_number(w->options, "pane-scrollbars-position");
+	pane_status = window_pane_get_pane_status(wp);
 
 	if (window_pane_show_scrollbar(wp, sb)) {
 		sb_w = wp->scrollbar_style.width;
@@ -695,12 +694,8 @@ server_client_check_mouse_in_pane(struct window_pane *wp, int px, int py,
 				bdr_bottom = fwp->yoff + fwp->sy;
 				if (py == bdr_bottom)
 					break;
-				if (window_pane_is_floating(wp)) {
-					/* Floating pane, check top border. */
-					bdr_top = fwp->yoff - 1;
-					if (py == bdr_top)
-						break;
-				}
+				if (py == bdr_top)
+					break;
 			}
 		}
 		if (fwp != NULL)
@@ -919,8 +914,7 @@ have_event:
 				log_debug("mouse %u,%u on pane %%%u", x, y,
 				    wp->id);
 			} else if (loc == KEYC_MOUSE_LOCATION_BORDER) {
-				sr = window_pane_border_status_get_range(wp, px,
-					py);
+				sr = window_pane_status_get_range(wp, px, py);
 				if (sr != NULL) {
 					n = sr->argument;
 					loc = KEYC_MOUSE_LOCATION_CONTROL0 + n;
@@ -1168,11 +1162,11 @@ server_client_repeat_time(struct client *c, struct key_binding *bd)
 static enum cmd_retval
 server_client_key_callback(struct cmdq_item *item, void *data)
 {
-	struct client			*c = cmdq_get_client(item);
 	struct key_event		*event = data;
+	struct client			*c, *ec = event->client;
 	key_code			 key = event->key;
 	struct mouse_event		*m = &event->m;
-	struct session			*s = c->session;
+	struct session			*s;
 	struct winlink			*wl;
 	struct window_pane		*wp;
 	struct window_mode_entry	*wme;
@@ -1183,6 +1177,12 @@ server_client_key_callback(struct cmdq_item *item, void *data)
 	uint64_t			 flags, prefix_delay;
 	struct cmd_find_state		 fs;
 	key_code			 key0, prefix, prefix2;
+
+	if (ec != NULL)
+		c = ec;
+	else
+		c = cmdq_get_client(item);
+	s = c->session;
 
 	/* Check the client is good to accept input. */
 	if (s == NULL || (c->flags & CLIENT_UNATTACHEDFLAGS))
@@ -1430,14 +1430,17 @@ paste_key:
 out:
 	if (s != NULL && key != KEYC_FOCUS_OUT)
 		server_client_update_latest(c);
+	if (ec != NULL)
+		server_client_unref(ec);
 	free(event->buf);
 	free(event);
 	return (CMD_RETURN_NORMAL);
 }
 
 /* Handle a key event. */
-int
-server_client_handle_key(struct client *c, struct key_event *event)
+static int
+server_client_handle_key0(struct client *c, struct key_event *event,
+    struct cmdq_item *after, struct cmdq_item **next)
 {
 	struct session		*s = c->session;
 	struct cmdq_item	*item;
@@ -1491,8 +1494,29 @@ server_client_handle_key(struct client *c, struct key_event *event)
 	 * previous keys.
 	 */
 	item = cmdq_get_callback(server_client_key_callback, event);
+	if (after != NULL) {
+		event->client = c;
+		c->references++;
+		item = cmdq_insert_after(after, item);
+		if (next != NULL)
+			*next = item;
+		return (1);
+	}
 	cmdq_append(c, item);
 	return (1);
+}
+
+int
+server_client_handle_key(struct client *c, struct key_event *event)
+{
+	return (server_client_handle_key0(c, event, NULL, NULL));
+}
+
+int
+server_client_handle_key_after(struct client *c, struct key_event *event,
+    struct cmdq_item *after, struct cmdq_item **next)
+{
+	return (server_client_handle_key0(c, event, after, next));
 }
 
 /* Client functions that need to happen every loop. */
@@ -1586,10 +1610,7 @@ server_client_resize_timer(__unused int fd, __unused short events, void *data)
 static void
 server_client_check_pane_resize(struct window_pane *wp)
 {
-	struct window_pane_resize	*r;
-	struct window_pane_resize	*r1;
-	struct window_pane_resize	*first;
-	struct window_pane_resize	*last;
+	struct window_pane_resize	*r, *first, *last;
 	struct timeval			 tv = { .tv_usec = 250000 };
 
 	if (TAILQ_EMPTY(&wp->resize_queue))
@@ -1629,10 +1650,7 @@ server_client_check_pane_resize(struct window_pane *wp)
 	} else if (last->sx != first->osx || last->sy != first->osy) {
 		/* Multiple resizes ending up with a different size. */
 		window_pane_send_resize(wp, last->sx, last->sy);
-		TAILQ_FOREACH_SAFE(r, &wp->resize_queue, entry, r1) {
-			TAILQ_REMOVE(&wp->resize_queue, r, entry);
-			free(r);
-		}
+		window_pane_clear_resizes(wp, NULL);
 	} else {
 		/*
 		 * Multiple resizes ending up with the same size. There will
@@ -1643,12 +1661,7 @@ server_client_check_pane_resize(struct window_pane *wp)
 		 */
 		r = TAILQ_PREV(last, window_pane_resizes, entry);
 		window_pane_send_resize(wp, r->sx, r->sy);
-		TAILQ_FOREACH_SAFE(r, &wp->resize_queue, entry, r1) {
-			if (r == last)
-				break;
-			TAILQ_REMOVE(&wp->resize_queue, r, entry);
-			free(r);
-		}
+		window_pane_clear_resizes(wp, last);
 		tv.tv_usec = 10000;
 	}
 	evtimer_add(&wp->resize_timer, &tv);
@@ -1760,7 +1773,7 @@ server_client_reset_state(struct client *c)
 	struct window_pane	*wp = server_client_get_pane(c), *loop;
 	struct screen		*s = NULL;
 	struct options		*oo = c->session->options;
-	int			 mode = 0, cursor, flags;
+	int			 mode = 0, cursor, flags, pane_mode = 0;
 	u_int			 cx = 0, cy = 0, ox, oy, sx, sy, n;
 	struct visible_ranges	*r;
 
@@ -1805,6 +1818,8 @@ server_client_reset_state(struct client *c)
 		cx = c->prompt_cursor;
 	} else if (wp != NULL && c->overlay_draw == NULL) {
 		cursor = 0;
+		pane_mode = wp->base.mode;
+
 		tty_window_offset(tty, &ox, &oy, &sx, &sy);
 		if (wp->xoff + (int)s->cx >= (int)ox &&
 		    wp->xoff + (int)s->cx <= (int)ox + (int)sx &&
@@ -1815,20 +1830,22 @@ server_client_reset_state(struct client *c)
 			cx = wp->xoff + (int)s->cx - (int)ox;
 			cy = wp->yoff + (int)s->cy - (int)oy;
 
+			r = screen_redraw_get_visible_ranges(wp, cx, cy, 1, NULL);
+			if (!screen_redraw_is_visible(r, cx))
+				cursor = 0;
+
 			if (status_at_line(c) == 0)
 				cy += status_line_size(c);
 		}
-		r = screen_redraw_get_visible_ranges(wp, cx, cy, 1, NULL);
-		if (!screen_redraw_is_visible(r, cx))
-			cursor = 0;
 
-		if (!cursor)
+		if ((pane_mode & MODE_SYNC) || !cursor)
 			mode &= ~MODE_CURSOR;
 	} else if (c->overlay_mode == NULL || s == NULL)
 		mode &= ~MODE_CURSOR;
-
-	log_debug("%s: cursor to %u,%u", __func__, cx, cy);
-	tty_cursor(tty, cx, cy);
+	if (~pane_mode & MODE_SYNC) {
+		log_debug("%s: cursor to %u,%u", __func__, cx, cy);
+		tty_cursor(tty, cx, cy);
+	}
 
 	/*
 	 * Set mouse mode if requested. To support dragging, always use button
@@ -2030,8 +2047,13 @@ server_client_check_redraw(struct client *c)
 			}
 		}
 	}
-	if (needed && (left = EVBUFFER_LENGTH(tty->out)) != 0) {
-		log_debug("%s: redraw deferred (%zu left)", c->name, left);
+	left = EVBUFFER_LENGTH(tty->out);
+	if (needed && (left != 0 || (tty->flags & TTY_BLOCK))) {
+		if (left != 0) {
+			log_debug("%s: redraw deferred (%zu left)", c->name,
+			    left);
+		} else
+			log_debug("%s: redraw deferred (blocked)", c->name);
 		if (!evtimer_initialized(&ev))
 			evtimer_set(&ev, server_client_redraw_timer, NULL);
 		if (!evtimer_pending(&ev, NULL)) {

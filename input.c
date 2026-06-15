@@ -1369,7 +1369,7 @@ input_esc_dispatch(struct input_ctx *ictx)
 {
 	struct screen_write_ctx		*sctx = &ictx->ctx;
 	struct screen			*s = sctx->s;
-	struct input_table_entry	*entry;
+	const struct input_table_entry	*entry;
 
 	if (ictx->flags & INPUT_DISCARD)
 		return (0);
@@ -1443,12 +1443,12 @@ input_esc_dispatch(struct input_ctx *ictx)
 static int
 input_csi_dispatch(struct input_ctx *ictx)
 {
-	struct screen_write_ctx	       *sctx = &ictx->ctx;
-	struct screen		       *s = sctx->s;
-	struct input_table_entry       *entry;
-	struct options		       *oo;
-	int				i, n, m, ek, set, p;
-	u_int				cx, bg = ictx->cell.cell.bg;
+	struct screen_write_ctx		*sctx = &ictx->ctx;
+	struct screen			*s = sctx->s;
+	const struct input_table_entry	*entry;
+	struct options			*oo;
+	int				 i, n, m, ek, set, p;
+	u_int				 cx, bg = ictx->cell.cell.bg;
 
 	if (ictx->flags & INPUT_DISCARD)
 		return (0);
@@ -3495,7 +3495,7 @@ static int
 input_osc_52_parse(struct input_ctx *ictx, const char *p, u_char **out,
     int *outlen, char *clip)
 {
-	char		*end;
+	const char	*end;
 	size_t		 len;
 	const char	*allow = "cpqs01234567";
 	u_int		 i, j = 0;

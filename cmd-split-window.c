@@ -38,11 +38,12 @@ const struct cmd_entry cmd_new_pane_entry = {
 	.name = "new-pane",
 	.alias = "newp",
 
-	.args = { "bc:de:EfF:hIkl:Lm:p:PR:s:S:t:vx:X:y:Y:Z", 0, -1, NULL },
-	.usage = "[-bdefhIklPvZ] [-c start-directory] [-e environment] "
-		 "[-F format] [-l size] [-m message] [-p percentage] "
+	.args = { "bB:c:de:EfF:hIkl:Lm:p:PR:s:S:t:T:vWx:X:y:Y:Z", 0, -1, NULL },
+	.usage = "[-bdefhIklPvWZ] [-B border-lines] "
+		  "[-c start-directory] [-e environment] "
+		  "[-F format] [-l size] [-m message] [-p percentage] "
 		 "[-s style] [-S active-border-style] "
-		 "[-R inactive-border-style] [-x width] [-y height] "
+		 "[-R inactive-border-style] [-T title] [-x width] [-y height] "
 		 "[-X x-position] [-Y y-position] " CMD_TARGET_PANE_USAGE " "
 		 "[shell-command [argument ...]]",
 
@@ -56,11 +57,11 @@ const struct cmd_entry cmd_split_window_entry = {
 	.name = "split-window",
 	.alias = "splitw",
 
-	.args = { "bc:de:EfF:hIkl:m:p:PR:s:S:t:vZ", 0, -1, NULL },
-	.usage = "[-bdefhIklPvZ] [-c start-directory] [-e environment] "
+	.args = { "bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ", 0, -1, NULL },
+	.usage = "[-bdefhIklPvWZ] [-c start-directory] [-e environment] "
 		 "[-F format] [-l size] [-m message] [-p percentage] "
 		 "[-s style] [-S active-border-style] "
-		 "[-R inactive-border-style] " CMD_TARGET_PANE_USAGE " "
+		 "[-R inactive-border-style] [-T title] " CMD_TARGET_PANE_USAGE " "
 		 "[shell-command [argument ...]]",
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -84,9 +85,11 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	struct layout_cell	*lc = NULL;
 	struct cmd_find_state	 fs;
 	int			 input, empty, is_floating, flags = 0;
-	const char		*template, *style;
-	char			*cause = NULL, *cp;
+	const char		*template, *style, *value;
+	char			*cause = NULL, *cp, *title;
+	struct options_entry	*oe;
 	struct args_value	*av;
+	enum pane_lines		 lines;
 	u_int			 count = args_count(args);
 
 	if (cmd_get_entry(self) == &cmd_new_pane_entry)
@@ -119,7 +122,7 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	else
 		lc = layout_get_tiled_cell(item, args, w, wp, flags, &cause);
 	if (cause != NULL) {
-		cmdq_error(item, "size or position %s", cause);
+		cmdq_error(item, "%s", cause);
 		free(cause);
 		return (CMD_RETURN_ERROR);
 	}
@@ -187,12 +190,32 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 			return (CMD_RETURN_ERROR);
 		}
 	}
+	value = args_get(args, 'B');
+	if (value != NULL) {
+		oe = options_get(new_wp->options, "pane-border-lines");
+		lines = options_find_choice(options_table_entry(oe), value,
+		    &cause);
+		if (cause != NULL) {
+			cmdq_error(item, "pane-border-lines %s", cause);
+			free(cause);
+			return (CMD_RETURN_ERROR);
+		}
+		options_set_number(new_wp->options, "pane-border-lines",
+		    lines);
+	}
 	if (args_has(args, 'k') || args_has(args, 'm')) {
 		options_set_number(new_wp->options, "remain-on-exit", 3);
-		if (args_has(args, 'm'))
+		if (args_has(args, 'm')) {
 			options_set_string(new_wp->options,
-				"remain-on-exit-format",
-				0, "%s", args_get(args, 'm'));
+			    "remain-on-exit-format", 0, "%s",
+			    args_get(args, 'm'));
+		}
+	}
+	if (args_has(args, 'T')) {
+		title = format_single_from_target(item, args_get(args, 'T'));
+		screen_set_title(&new_wp->base, title);
+		notify_pane("pane-title-changed", new_wp);
+		free(title);
 	}
 
 	if (input) {
@@ -220,7 +243,7 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		window_pop_zoom(wp->window);
 		server_redraw_window(wp->window);
 	}
-	server_status_session(s);
+	server_redraw_session(s);
 
 	if (args_has(args, 'P')) {
 		if ((template = args_get(args, 'F')) == NULL)
@@ -238,5 +261,15 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	environ_free(sc.environ);
 	if (input)
 		return (CMD_RETURN_WAIT);
+
+	if (args_has(args, 'W')) {
+		/*
+		 * With -W, block this command queue item until the pane's
+		 * command exits; window_pane_wait_finish will be called to
+		 * continue it.
+		 */
+		new_wp->wait_item = item;
+		return (CMD_RETURN_WAIT);
+	}
 	return (CMD_RETURN_NORMAL);
 }

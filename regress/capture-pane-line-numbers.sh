@@ -16,6 +16,13 @@ $TMUX -f/dev/null new -d -x20 -y5 'printf "one\n"; printf "two\n"; sleep 5' ||
 sleep 1
 
 $TMUX capturep -pL -S0 -E1 >$TMP || exit 1
+awk '
+	NR == 1 { if ($1 != 0 || $2 != "one") exit 1 }
+	NR == 2 { if ($1 != 1 || $2 != "two") exit 1 }
+	END { if (NR != 2) exit 1 }
+' $TMP || exit 1
+
+$TMUX whisp-capture-pane -L -S0 -E1 >$TMP || exit 1
 awk -F '	' '
 	NR == 1 { if ($1 != 1 || $2 != "one") exit 1 }
 	NR == 2 { if ($1 != 2 || $2 != "two") exit 1 }
@@ -47,8 +54,8 @@ $TMUX -f/dev/null new -d -x20 -y5 'printf "left\n"; sleep 5' || exit 1
 $TMUX splitw -d 'printf "right\n"; sleep 5' || exit 1
 sleep 1
 
-$TMUX capturep -pL -t%0 -S0 -E0 >$TMP || exit 1
-$TMUX capturep -pL -t%1 -S0 -E0 >$TMP2 || exit 1
+$TMUX whisp-capture-pane -L -t%0 -S0 -E0 >$TMP || exit 1
+$TMUX whisp-capture-pane -L -t%1 -S0 -E0 >$TMP2 || exit 1
 awk -F '	' 'NR == 1 { if ($1 != 1 || $2 != "left") exit 1 }' $TMP ||
 	exit 1
 awk -F '	' 'NR == 1 { if ($1 != 1 || $2 != "right") exit 1 }' $TMP2 ||
@@ -58,25 +65,22 @@ $TMUX kill-server 2>/dev/null
 $TMUX -f/dev/null new -d -x5 -y5 'printf "abcdef"; sleep 5' || exit 1
 sleep 1
 
-$TMUX capturep -pL -S0 -E1 >$TMP || exit 1
+$TMUX whisp-capture-pane -L -S0 -E1 >$TMP || exit 1
 awk -F '	' '
 	NR == 1 { first = $1; if ($2 != "abcde") exit 1 }
 	NR == 2 { if ($1 <= first || $2 != "f") exit 1 }
 	END { if (NR != 2) exit 1 }
 ' $TMP || exit 1
 
-$TMUX capturep -pLJ >$TMP 2>&1 && exit 1
+$TMUX whisp-capture-pane -L -J >$TMP 2>&1 && exit 1
 grep -- '-L and -J are incompatible' $TMP >/dev/null || exit 1
-
-$TMUX capturep -pLP >$TMP 2>&1 && exit 1
-grep -- '-L and -P are incompatible' $TMP >/dev/null || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f/dev/null new -d -x5 -y5 'printf "abcdef\nnext\n"; sleep 5' ||
 	exit 1
 sleep 1
 
-$TMUX capturep -pL -S0 -E2 >$TMP || exit 1
+$TMUX whisp-capture-pane -L -S0 -E2 >$TMP || exit 1
 anchor=$(awk -F '	' 'NR == 3 { print $1 }' $TMP)
 test -n "$anchor" || exit 1
 
@@ -101,7 +105,7 @@ $TMUX -f/dev/null start-server \; set -g history-limit 3 \; \
 	exit 1
 sleep 1
 
-$TMUX capturep -pL -S- -E- >$TMP || exit 1
+$TMUX whisp-capture-pane -L -S- -E- >$TMP || exit 1
 awk -F '	' '
 	$1 == 0 { next }
 	previous != "" && $1 <= previous { exit 1 }

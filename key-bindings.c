@@ -65,7 +65,7 @@
 	" ''" \
 	" '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Up,}' 'u' {swap-pane -U}" \
 	" '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Down,}' 'd' {swap-pane -D}" \
-	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-pane}" \
+	" '#{?#{!:#{pane_floating_flag}},#{?pane_marked_set,,-}Swap Marked,}' 's' {swap-pane}" \
 	" ''" \
 	" 'Kill' 'X' {kill-pane}" \
 	" 'Respawn' 'R' {respawn-pane -k}" \
@@ -406,8 +406,10 @@ key_bindings_init(void)
 		"bind -N 'Choose a window from a list' w { choose-tree -Zw }",
 		"bind -N 'Kill the active pane' x { confirm-before -p\"kill-pane #P? (y/n)\" kill-pane }",
 		"bind -N 'Zoom the active pane' z { resize-pane -Z }",
-		"bind -N 'Swap the active pane with the pane above' '{' { swap-pane -U }",
-		"bind -N 'Swap the active pane with the pane below' '}' { swap-pane -D }",
+		"bind -N 'Move pane to top-left corner' '{' { resize-pane -x50% -y50%; move-pane -P top-left }",
+		"bind -N 'Move pane to top-right corner' '}' { resize-pane -x50% -y50%; move-pane -P top-right }",
+		"bind -N 'Move pane to bottom-left corner' 'M-{' { resize-pane -x50% -y50%; move-pane -P bottom-left }",
+		"bind -N 'Move pane to bottom-right corner' 'M-}' { resize-pane -x50% -y50%; move-pane -P bottom-right }",
 		"bind -N 'Show messages' '~' { show-messages }",
 		"bind -N 'Enter copy mode and scroll up' PPage { copy-mode -u }",
 		"bind -N 'Select the pane above the active pane' -r Up { select-pane -U }",
@@ -429,13 +431,13 @@ key_bindings_init(void)
 		"bind -N 'Move the visible part of the window left' -r S-Left { refresh-client -L 10 }",
 		"bind -N 'Move the visible part of the window right' -r S-Right { refresh-client -R 10 }",
 		"bind -N 'Reset so the visible part of the window follows the cursor' -r DC { refresh-client -c }",
-		"bind -N 'Resize the pane up by 5' -r M-Up { resize-pane -U 5 }",
+		"bind -N 'Resize the pane up by 5' -r M-Up if -F '#{?floating_pane_flag}' { resizep -D-5 } { resize-pane -U 5 }",
 		"bind -N 'Resize the pane down by 5' -r M-Down { resize-pane -D 5 }",
-		"bind -N 'Resize the pane left by 5' -r M-Left { resize-pane -L 5 }",
-		"bind -N 'Resize the pane right by 5' -r M-Right { resize-pane -R 5 }",
-		"bind -N 'Resize the pane up' -r C-Up { resize-pane -U }",
+		"bind -N 'Resize the pane left by 5' -r M-Left if -F '#{?floating_pane_flag}' { resizep -R-5 } { resize-pane -L 5 }",
+		"bind -N 'Resize the pane right by 5' -r M-Right resize-pane -R 5",
+		"bind -N 'Resize the pane up' -r C-Up if -F '#{?floating_pane_flag}' { resizep -D-1 } { resize-pane -U }",
 		"bind -N 'Resize the pane down' -r C-Down { resize-pane -D }",
-		"bind -N 'Resize the pane left' -r C-Left { resize-pane -L }",
+		"bind -N 'Resize the pane left' -r C-Left if -F '#{?floating_pane_flag}' { resizep -R-1 } { resize-pane -L }",
 		"bind -N 'Resize the pane right' -r C-Right { resize-pane -R }",
 
 		/* Menu keys */
@@ -530,7 +532,7 @@ key_bindings_init(void)
 		"bind -Tcopy-mode g { command-prompt -p'(goto line)' { send -X goto-line -- '%%' } }",
 		"bind -Tcopy-mode n { send -X search-again }",
 		"bind -Tcopy-mode q { send -X cancel }",
-		"bind -Tcopy-mode r { send -X refresh-from-pane }",
+		"bind -Tcopy-mode r { send -X refresh-toggle }",
 		"bind -Tcopy-mode t { command-prompt -1p'(jump to forward)' { send -X jump-to-forward -- '%%' } }",
 		"bind -Tcopy-mode Home { send -X start-of-line }",
 		"bind -Tcopy-mode End { send -X end-of-line }",
@@ -638,7 +640,7 @@ key_bindings_init(void)
 		"bind -Tcopy-mode-vi n { send -X search-again }",
 		"bind -Tcopy-mode-vi o { send -X other-end }",
 		"bind -Tcopy-mode-vi q { send -X cancel }",
-		"bind -Tcopy-mode-vi r { send -X refresh-from-pane }",
+		"bind -Tcopy-mode-vi r { send -X refresh-toggle }",
 		"bind -Tcopy-mode-vi t { command-prompt -1p'(jump to forward)' { send -X jump-to-forward -- '%%' } }",
 		"bind -Tcopy-mode-vi v { send -X rectangle-toggle }",
 		"bind -Tcopy-mode-vi w { send -X next-word }",

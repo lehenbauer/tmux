@@ -15,7 +15,7 @@ $TMUX -f/dev/null new -d -x40 -y5 \
 $TMUX splitw -d 'printf "nomatch\nneedle needle\n"; sleep 5' || exit 1
 sleep 1
 
-$TMUX search-history -F '#{pane_id}	#{match_count}	#{matching_line_count}	#{first_match_line}	#{last_match_line}' needle >$TMP ||
+$TMUX whisp-search-history -F '#{pane_id}	#{match_count}	#{matching_line_count}	#{first_match_line}	#{last_match_line}' needle >$TMP ||
 	exit 1
 awk -F '	' '
 	$1 == "%0" {
@@ -29,7 +29,7 @@ awk -F '	' '
 	END { if (!seen0 || !seen1 || NR != 2) exit 1 }
 ' $TMP || exit 1
 
-$TMUX search-history -i -F '#{pane_id}	#{match_count}' NEEDLE >$TMP ||
+$TMUX whisp-search-history -i -F '#{pane_id}	#{match_count}' NEEDLE >$TMP ||
 	exit 1
 awk -F '	' '
 	$1 == "%0" { if ($2 != 1) exit 1; seen0 = 1 }
@@ -37,7 +37,7 @@ awk -F '	' '
 	END { if (!seen0 || !seen1 || NR != 2) exit 1 }
 ' $TMP || exit 1
 
-$TMUX search-history -r -F '#{pane_id}	#{match_count}' 'n[e]+dle' >$TMP ||
+$TMUX whisp-search-history -r -F '#{pane_id}	#{match_count}' 'n[e]+dle' >$TMP ||
 	exit 1
 awk -F '	' '
 	$1 == "%0" { if ($2 != 1) exit 1; seen0 = 1 }
@@ -45,15 +45,18 @@ awk -F '	' '
 	END { if (!seen0 || !seen1 || NR != 2) exit 1 }
 ' $TMP || exit 1
 
-$TMUX search-history -F '#{pane_id}' absent >$TMP || exit 1
+$TMUX whisp-search-history -F '#{pane_id}' absent >$TMP || exit 1
 test ! -s $TMP || exit 1
+
+$TMUX whisp-search-history -n 1 -F '#{pane_id}' needle >$TMP || exit 1
+awk 'END { if (NR != 1) exit 1 }' $TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f/dev/null new -d -x40 -y5 'printf "needle\n"; sleep 5' ||
 	exit 1
 sleep 1
 cat <<EOF|$TMUX -C a >$TMP
-search-history -F '#{pane_id} #{match_count}' needle
+whisp-search-history -F '#{pane_id} #{match_count}' needle
 EOF
 grep '^%0 1$' $TMP >/dev/null || exit 1
 
@@ -64,7 +67,7 @@ $TMUX new-session -d -s two -x40 -y5 'sleep 5' || exit 1
 $TMUX link-window -s one:0 -t two:1 || exit 1
 sleep 1
 
-$TMUX search-history -F '#{pane_id}' sharedtoken >$TMP || exit 1
+$TMUX whisp-search-history -F '#{pane_id}' sharedtoken >$TMP || exit 1
 awk 'END { if (NR != 1) exit 1 }' $TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
@@ -76,7 +79,7 @@ sleep 1
 $TMUX display-message -p '#{C:oldtoken}' >$TMP || exit 1
 printf '0\n' | cmp -s - $TMP || exit 1
 
-$TMUX search-history -F '#{match_count}	#{matching_line_count}	#{first_match_line}	#{last_match_line}	#{retained_first_line}	#{retained_last_line}' oldtoken >$TMP ||
+$TMUX whisp-search-history -F '#{match_count}	#{matching_line_count}	#{first_match_line}	#{last_match_line}	#{retained_first_line}	#{retained_last_line}' oldtoken >$TMP ||
 	exit 1
 awk -F '	' '
 	NR == 1 {
@@ -86,10 +89,26 @@ awk -F '	' '
 	END { if (NR != 1) exit 1 }
 ' $TMP || exit 1
 
-$TMUX search-history '' >$TMP 2>&1 && exit 1
+$TMUX kill-server 2>/dev/null
+$TMUX -f/dev/null new -d -x5 -y5 'printf "abcdef\n"; sleep 5' || exit 1
+sleep 1
+
+$TMUX whisp-search-history -F '#{pane_id}' cdef >$TMP || exit 1
+test ! -s $TMP || exit 1
+
+$TMUX whisp-search-history -J -F '#{match_count}	#{matching_line_count}	#{first_match_line}	#{last_match_line}' cdef >$TMP ||
+	exit 1
+awk -F '	' '
+	NR == 1 {
+		if ($1 != 1 || $2 != 1 || $3 >= $4) exit 1
+	}
+	END { if (NR != 1) exit 1 }
+' $TMP || exit 1
+
+$TMUX whisp-search-history '' >$TMP 2>&1 && exit 1
 grep -- 'empty search pattern' $TMP >/dev/null || exit 1
 
-$TMUX search-history -r '[' >$TMP 2>&1 && exit 1
+$TMUX whisp-search-history -r '[' >$TMP 2>&1 && exit 1
 grep -- 'invalid regular expression' $TMP >/dev/null || exit 1
 
 $TMUX kill-server 2>/dev/null

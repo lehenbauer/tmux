@@ -292,15 +292,22 @@ layout_fix_offsets(struct window *w)
 static int
 layout_cell_is_top(struct window *w, struct layout_cell *lc)
 {
-	struct layout_cell	*next;
+	struct layout_cell	*next, *edge;
 
 	while (lc != w->layout_root) {
 		next = lc->parent;
 		if (next == NULL)
 			return (0);
-		if (next->type == LAYOUT_TOPBOTTOM &&
-		    lc != TAILQ_FIRST(&next->cells))
-			return (0);
+		if (next->type == LAYOUT_TOPBOTTOM) {
+			edge = TAILQ_FIRST(&next->cells);
+			while (edge != NULL) {
+				if (~edge->flags & LAYOUT_CELL_FLOATING)
+					break;
+				edge = TAILQ_NEXT(edge, entry);
+			}
+			if (lc != edge)
+				return (0);
+		}
 		lc = next;
 	}
 	return (1);
@@ -310,15 +317,22 @@ layout_cell_is_top(struct window *w, struct layout_cell *lc)
 static int
 layout_cell_is_bottom(struct window *w, struct layout_cell *lc)
 {
-	struct layout_cell	*next;
+	struct layout_cell	*next, *edge;
 
 	while (lc != w->layout_root) {
 		next = lc->parent;
 		if (next == NULL)
 			return (0);
-		if (next->type == LAYOUT_TOPBOTTOM &&
-		    lc != TAILQ_LAST(&next->cells, layout_cells))
-			return (0);
+		if (next->type == LAYOUT_TOPBOTTOM) {
+			edge = TAILQ_LAST(&next->cells, layout_cells);
+			while (edge != NULL) {
+				if (~edge->flags & LAYOUT_CELL_FLOATING)
+					break;
+				edge = TAILQ_PREV(edge, layout_cells, entry);
+			}
+			if (lc != edge)
+				return (0);
+		}
 		lc = next;
 	}
 	return (1);
@@ -348,7 +362,7 @@ layout_fix_panes(struct window *w, struct window_pane *skip)
 	int			 status, scrollbars, sb_pos, sb_w, sb_pad;
 	u_int			 sx, sy;
 
-	status = options_get_number(w->options, "pane-border-status");
+	status = window_get_pane_status(w);
 	scrollbars = options_get_number(w->options, "pane-scrollbars");
 	sb_pos = options_get_number(w->options, "pane-scrollbars-position");
 
@@ -426,7 +440,7 @@ layout_resize_check(struct window *w, struct layout_cell *lc,
 	u_int			 available, minimum;
 	int			 status, scrollbars;
 
-	status = options_get_number(w->options, "pane-border-status");
+	status = window_get_pane_status(w);
 	scrollbars = options_get_number(w->options, "pane-scrollbars");
 
 	if (lc->type == LAYOUT_WINDOWPANE) {
@@ -686,6 +700,66 @@ layout_resize_pane_to(struct window_pane *wp, enum layout_type type,
 	layout_resize_pane(wp, type, change, 1);
 }
 
+/* Resize a floating pane to an absolute size. */
+void
+layout_resize_floating_pane_to(struct window_pane *wp, enum layout_type type,
+    u_int size, char **cause)
+{
+	struct layout_cell	*lc = wp->layout_cell;
+
+	if (~lc->flags & LAYOUT_CELL_FLOATING) {
+		*cause = xstrdup("pane is not floating");
+		return;
+	}
+
+	if (size >= PANE_MINIMUM + 2)
+		size -= 2;
+	if (size < PANE_MINIMUM || size > PANE_MAXIMUM) {
+		*cause = xstrdup("size is too big or too small");
+		return;
+	}
+
+	if (type == LAYOUT_TOPBOTTOM)
+		lc->sy = size;
+	else
+		lc->sx = size;
+}
+
+/* Resize a floating pane relative to its current size. */
+void
+layout_resize_floating_pane(struct window_pane *wp, enum layout_type type,
+    int change, int opposite, char **cause)
+{
+	struct layout_cell	*lc = wp->layout_cell;
+	u_int			 size;
+
+	if (~lc->flags & LAYOUT_CELL_FLOATING) {
+		*cause = xstrdup("pane is not floating");
+		return;
+	}
+
+	if (type == LAYOUT_TOPBOTTOM) {
+		size = lc->sy + change;
+		if (size < PANE_MINIMUM || size > PANE_MAXIMUM) {
+			*cause = xstrdup("change is too big or too small");
+			return;
+		}
+		lc->sy = size;
+		if (opposite)
+			lc->yoff -= change;
+	} else {
+		size = lc->sx + change;
+		if (size < PANE_MINIMUM || size > PANE_MAXIMUM) {
+			*cause = xstrdup("change is too big or too small");
+			return;
+		}
+		lc->sx = size;
+		if (opposite)
+			lc->xoff -= change;
+	}
+}
+
+/* Resize a layout cell. */
 void
 layout_resize_layout(struct window *w, struct layout_cell *lc,
     enum layout_type type, int change, int opposite)
@@ -719,9 +793,7 @@ void
 layout_resize_pane(struct window_pane *wp, enum layout_type type, int change,
     int opposite)
 {
-	struct layout_cell	*lc, *lcparent;
-
-	lc = wp->layout_cell;
+	struct layout_cell	*lc = wp->layout_cell, *lcparent;
 
 	/* Find next parent of the same type. */
 	lcparent = lc->parent;
@@ -733,8 +805,11 @@ layout_resize_pane(struct window_pane *wp, enum layout_type type, int change,
 		return;
 
 	/* If this is the last cell, move back one. */
-	if (lc == TAILQ_LAST(&lcparent->cells, layout_cells))
-		lc = TAILQ_PREV(lc, layout_cells, entry);
+	if (lc == TAILQ_LAST(&lcparent->cells, layout_cells)) {
+		do
+			lc = TAILQ_PREV(lc, layout_cells, entry);
+		while (lc->flags & LAYOUT_CELL_FLOATING);
+	}
 
 	layout_resize_layout(wp->window, lc, type, change, opposite);
 }
@@ -999,7 +1074,7 @@ layout_split_pane(struct window_pane *wp, enum layout_type type, int size,
 		lc = wp->window->layout_root;
 	else
 		lc = wp->layout_cell;
-	status = options_get_number(wp->window->options, "pane-border-status");
+	status = window_get_pane_status(wp->window);
 	scrollbars = options_get_number(wp->window->options, "pane-scrollbars");
 
 	/* Copy the old cell size. */
@@ -1222,7 +1297,7 @@ layout_spread_cell(struct window *w, struct layout_cell *parent)
 		number++;
 	if (number <= 1)
 		return (0);
-	status = options_get_number(w->options, "pane-border-status");
+	status = window_get_pane_status(w);
 
 	if (parent->type == LAYOUT_LEFTRIGHT)
 		size = parent->sx;
@@ -1361,30 +1436,43 @@ layout_get_floating_cell(struct cmdq_item *item, struct args *args,
 	struct layout_cell	*lcnew;
 	int			 sx = w->sx / 2, sy = w->sy / 4;
 	int			 ox = INT_MAX, oy = INT_MAX;
+	char			*error;
 
 	if (args_has(args, 'x')) {
 		sx = args_percentage_and_expand(args, 'x', 0, w->sx - 1, w->sx,
-		    item, cause);
-		if (*cause != NULL)
+		    item, &error);
+		if (error != NULL) {
+			xasprintf(cause, "position %s", error);
+			free(error);
 			return (NULL);
+		}
 	}
 	if (args_has(args, 'y')) {
 		sy = args_percentage_and_expand(args, 'y', 0, w->sy - 1, w->sy,
-		    item, cause);
-		if (*cause != NULL)
+		    item, &error);
+		if (error != NULL) {
+			xasprintf(cause, "position %s", error);
+			free(error);
 			return (NULL);
+		}
 	}
 	if (args_has(args, 'X')) {
 		ox = args_percentage_and_expand(args, 'X', -sx, w->sx,
-		    w->sx, item, cause);
-		if (*cause != NULL)
+		    w->sx, item, &error);
+		if (error != NULL) {
+			xasprintf(cause, "size %s", error);
+			free(error);
 			return (NULL);
+		}
 	}
 	if (args_has(args, 'Y')) {
 		oy = args_percentage_and_expand(args, 'Y', -sy, w->sy,
-		    w->sy, item, cause);
-		if (*cause != NULL)
+		    w->sy, item, &error);
+		if (error != NULL) {
+			xasprintf(cause, "size %s", error);
+			free(error);
 			return (NULL);
+		}
 	}
 
 	if (ox == INT_MAX) {
@@ -1406,6 +1494,15 @@ layout_get_floating_cell(struct cmdq_item *item, struct args *args,
 				oy = 2;
 		}
 		w->last_new_pane_y = oy;
+	}
+
+	if (sx < PANE_MINIMUM || sx > PANE_MAXIMUM) {
+		*cause = xstrdup("invalid width");
+		return (NULL);
+	}
+	if (sy < PANE_MINIMUM || sy > PANE_MAXIMUM) {
+		*cause = xstrdup("invalid height");
+		return (NULL);
 	}
 
 	lcnew = layout_floating_pane(w, sx, sy, ox, oy);
