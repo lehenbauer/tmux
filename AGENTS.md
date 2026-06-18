@@ -15,6 +15,7 @@
 - For substantial work, use a feature branch.
 - Keep unrelated local files out of commits. This worktree may contain agent-local files such as `.claude/`, `.gemini/`, `CLAUDE.md`, `TMUX.md`, and scripts; do not clean up or revert files unrelated to the task.
 - Remotes should be: `origin` as `git@github.com:lehenbauer/tmux.git` and `upstream` as `https://github.com/tmux/tmux.git`.
+- For periodic upstream refreshes, follow `WHISP_UPSTREAM.md`.
 
 ## Build and Validation
 
