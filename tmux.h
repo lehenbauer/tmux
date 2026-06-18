@@ -98,6 +98,12 @@ struct winlink;
 #define TMUX_LOCK_CMD "lock -np"
 #endif
 
+/* Forbidden characters in names. */
+#define WINDOW_NAME_FORBID ":."
+#define WINDOW_NAME_FORBID_EXT ":.#"
+#define SESSION_NAME_FORBID ":."
+#define SESSION_NAME_FORBID_EXT ":.#"
+
 /* Minimum and maximum layout cell size, NOT including border lines. */
 #define PANE_MINIMUM 1
 #define PANE_MAXIMUM 10000
@@ -952,6 +958,7 @@ enum style_default_type {
 struct style {
 	struct grid_cell	gc;
 	int			ignore;
+	int			dim;
 
 	int			fill;
 	enum style_align	align;
@@ -1094,7 +1101,8 @@ enum pane_lines {
 	PANE_LINES_HEAVY,
 	PANE_LINES_SIMPLE,
 	PANE_LINES_NUMBER,
-	PANE_LINES_SPACES
+	PANE_LINES_SPACES,
+	PANE_LINES_NONE
 };
 
 /* Pane border indicator option. */
@@ -1342,6 +1350,8 @@ struct window_pane {
 
 	struct grid_cell cached_gc;
 	struct grid_cell cached_active_gc;
+	u_int		 cached_dim;
+	u_int		 cached_active_dim;
 	struct colour_palette palette;
 	enum client_theme last_theme;
 	struct style_line_entry border_status_line;
@@ -1682,6 +1692,7 @@ LIST_HEAD(tty_terms, tty_term);
 struct tty_style_ctx {
 	const struct grid_cell	*defaults;
 	struct colour_palette	*palette;
+	u_int			 dim;
 	struct hyperlinks	*hyperlinks;
 };
 
@@ -2156,7 +2167,7 @@ struct client {
 #define CLIENT_CONTROL_NOOUTPUT 0x4000000
 #define CLIENT_DEFAULTSOCKET 0x8000000
 #define CLIENT_STARTSERVER 0x10000000
-#define CLIENT_REDRAWPANES 0x20000000
+/* 0x20000000 unused */
 #define CLIENT_NOFORK 0x40000000
 #define CLIENT_ACTIVEPANE 0x80000000ULL
 #define CLIENT_CONTROL_PAUSEAFTER 0x100000000ULL
@@ -2165,16 +2176,14 @@ struct client {
 /* 0x800000000ULL unused */
 #define CLIENT_BRACKETPASTING 0x1000000000ULL
 #define CLIENT_ASSUMEPASTING 0x2000000000ULL
-#define CLIENT_REDRAWSCROLLBARS 0x4000000000ULL
+/* 0x4000000000ULL unused */
 #define CLIENT_NO_DETACH_ON_DESTROY 0x8000000000ULL
 #define CLIENT_ALLREDRAWFLAGS		\
 	(CLIENT_REDRAWWINDOW|		\
 	 CLIENT_REDRAWSTATUS|		\
 	 CLIENT_REDRAWSTATUSALWAYS|	\
 	 CLIENT_REDRAWBORDERS|		\
-	 CLIENT_REDRAWOVERLAY|		\
-	 CLIENT_REDRAWPANES|		\
-	 CLIENT_REDRAWSCROLLBARS)
+	 CLIENT_REDRAWOVERLAY)
 #define CLIENT_UNATTACHEDFLAGS	\
 	(CLIENT_DEAD|		\
 	 CLIENT_SUSPENDED|	\
@@ -2200,9 +2209,6 @@ struct client {
 	struct key_table	*keytable;
 	key_code		 last_key;
 	time_t			 paste_time;
-
-	uint64_t		 redraw_panes;
-	uint64_t		 redraw_scrollbars;
 
 	int			 message_ignore_keys;
 	int			 message_ignore_styles;
@@ -2448,6 +2454,7 @@ void		 setblocking(int, int);
 char 		*shell_argv0(const char *, int);
 uint64_t	 get_timer(void);
 char		*clean_name(const char *, const char *);
+int		 check_name(const char *, const char *);
 const char	*sig2name(int);
 const char	*find_cwd(void);
 const char	*find_home(void);
@@ -2788,7 +2795,7 @@ void	tty_cmd_sixelimage(struct tty *, const struct tty_ctx *);
 void	tty_draw_images(struct client *, struct window_pane *, struct screen *);
 #endif
 void	tty_cmd_syncstart(struct tty *, const struct tty_ctx *);
-void	tty_default_colours(struct grid_cell *, struct window_pane *);
+void	tty_default_colours(struct grid_cell *, struct window_pane *, u_int *);
 
 /* tty-term.c */
 extern struct tty_terms tty_terms;
@@ -3225,6 +3232,7 @@ int	 colour_find_rgb(u_char, u_char, u_char);
 int	 colour_join_rgb(u_char, u_char, u_char);
 void	 colour_split_rgb(int, u_char *, u_char *, u_char *);
 int	 colour_force_rgb(int);
+int	 colour_dim(int, u_int);
 const char *colour_tostring(int);
 enum client_theme colour_totheme(int);
 int	 colour_fromstring(const char *);
@@ -3406,9 +3414,6 @@ void	 screen_write_alternateoff(struct screen_write_ctx *,
 /* screen-redraw.c */
 void	 screen_redraw_screen(struct client *);
 void	 screen_redraw_pane(struct client *, struct window_pane *, int);
-int	 screen_redraw_is_visible(struct visible_ranges *, u_int);
-struct visible_ranges *screen_redraw_get_visible_ranges(struct window_pane *,
-	     int, int, u_int, struct visible_ranges *);
 
 /* screen.c */
 void	 screen_init(struct screen *, u_int, u_int, u_int);
@@ -3419,8 +3424,8 @@ void	 screen_reset_hyperlinks(struct screen *);
 void	 screen_set_default_cursor(struct screen *, struct options *);
 void	 screen_set_cursor_style(u_int, enum screen_cursor_style *, int *);
 void	 screen_set_cursor_colour(struct screen *, int);
-int	 screen_set_title(struct screen *, const char *);
-int	 screen_set_path(struct screen *, const char *);
+int	 screen_set_title(struct screen *, const char *, int);
+int	 screen_set_path(struct screen *, const char *, int);
 void	 screen_push_title(struct screen *);
 void	 screen_pop_title(struct screen *);
 void	 screen_set_progress_bar(struct screen *, enum progress_bar_state, int);
@@ -3516,7 +3521,7 @@ int		 window_pane_key(struct window_pane *, struct client *,
 		     struct mouse_event *);
 void		 window_pane_paste(struct window_pane *, key_code, char *,
 		     size_t);
-int		 window_pane_visible(struct window_pane *);
+int		 window_pane_is_visible(struct window_pane *);
 int		 window_pane_exited(struct window_pane *);
 u_int		 window_pane_search(struct window_pane *, const char *, int,
 		     int);
@@ -3530,7 +3535,7 @@ void		 window_pane_stack_push(struct window_panes *,
 		     struct window_pane *);
 void		 window_pane_stack_remove(struct window_panes *,
 		     struct window_pane *);
-void		 window_set_name(struct window *, const char *);
+void		 window_set_name(struct window *, const char *, const char *);
 void		 window_add_ref(struct window *, const char *);
 void		 window_remove_ref(struct window *, const char *);
 void		 winlink_clear_flags(struct winlink *);
@@ -3559,6 +3564,11 @@ struct style_range *window_pane_status_get_range(struct window_pane *, u_int,
 		     u_int);
 int		 window_pane_is_floating(struct window_pane *);
 
+/* window-visible.c */
+int		 window_position_is_visible(struct visible_ranges *, u_int);
+struct visible_ranges *window_visible_ranges(struct window_pane *, int, int,
+		     u_int, struct visible_ranges *);
+
 /* layout.c */
 u_int		 layout_count_cells(struct layout_cell *);
 struct layout_cell *layout_create_cell(struct layout_cell *);
@@ -3577,6 +3587,7 @@ void		 layout_fix_offsets(struct window *);
 void		 layout_fix_panes(struct window *, struct window_pane *);
 void		 layout_resize_adjust(struct window *, struct layout_cell *,
 		     enum layout_type, int);
+struct layout_cell *layout_cell_get_neighbour(struct layout_cell *);
 void		 layout_init(struct window *, struct window_pane *);
 void		 layout_free(struct window *);
 void		 layout_resize(struct window *, u_int, u_int);
@@ -3597,10 +3608,11 @@ struct layout_cell *layout_floating_pane(struct window *, u_int, u_int, int,
 void		 layout_close_pane(struct window_pane *);
 int		 layout_spread_cell(struct window *, struct layout_cell *);
 void		 layout_spread_out(struct window_pane *);
-struct layout_cell *layout_get_floating_cell(struct cmdq_item *, struct args *,
-		     struct window *, struct window_pane *, char **);
 struct layout_cell *layout_get_tiled_cell(struct cmdq_item *, struct args *,
 		     struct window *, struct window_pane *, int, char **);
+struct layout_cell *layout_get_floating_cell(struct cmdq_item *, struct args *,
+		     struct window *, struct window_pane *, char **);
+int		 layout_remove_tile(struct window *, struct layout_cell *);
 
 /* layout-custom.c */
 char		*layout_dump(struct window *, struct layout_cell *);
@@ -3879,7 +3891,7 @@ int		 popup_modify(struct client *, const char *, const char *,
 int		 style_parse(struct style *,const struct grid_cell *,
 		     const char *);
 const char	*style_tostring(struct style *);
-void		 style_add(struct grid_cell *, struct options *,
+struct style	*style_add(struct grid_cell *, struct options *,
 		     const char *, struct format_tree *);
 void		 style_apply(struct grid_cell *, struct options *,
 		     const char *, struct format_tree *);
