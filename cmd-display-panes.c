@@ -65,8 +65,7 @@ cmd_display_panes_put(struct screen_redraw_ctx *ctx,
 	struct visible_range	*ri;
 	u_int			 i, j;
 
-	r = screen_redraw_get_visible_ranges(wp, ctx->ox + cx, ctx->oy + cy,
-	    len, NULL);
+	r = window_visible_ranges(wp, ctx->ox + cx, ctx->oy + cy, len, NULL);
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		for (j = ri->px; j < ri->px + ri->nx; j++) {
@@ -103,7 +102,7 @@ cmd_display_panes_draw_format(struct screen_redraw_ctx *ctx,
 	screen_write_stop(&sctx);
 	free(expanded);
 
-	r = screen_redraw_get_visible_ranges(wp, px, wp->yoff, sx, NULL);
+	r = window_visible_ranges(wp, px, wp->yoff, sx, NULL);
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		tty_draw_line(tty, &screen, ri->px - px, 0, ri->nx,
@@ -264,7 +263,7 @@ cmd_display_panes_draw(struct client *c, __unused void *data,
 	log_debug("%s: %s @%u", __func__, c->name, w->id);
 
 	TAILQ_FOREACH(wp, &w->panes, entry) {
-		if (window_pane_visible(wp))
+		if (window_pane_is_visible(wp))
 			cmd_display_panes_draw_pane(ctx, wp);
 	}
 }

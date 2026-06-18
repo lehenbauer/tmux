@@ -3382,7 +3382,7 @@ or
 reverses the sort order.
 .Tg movep
 .It Xo Ic move\-pane
-.Op Fl bdfhv
+.Op Fl bdfhMv
 .Op Fl D Op Ar lines
 .Op Fl l Ar size
 .Op Fl L Op Ar columns
@@ -3437,7 +3437,7 @@ which may be one of:
 .It Li "top-left-centre" Ta "Centre of top-left quadrant"
 .It Li "top-right-centre" Ta "Centre of top-right quadrant"
 .It Li "bottom-left-centre" Ta "Centre of bottom-left quadrant"
-.It Li "bottom-right-centre" Ta "Centre of botton-right quadrant"
+.It Li "bottom-right-centre" Ta "Centre of bottom-right quadrant"
 .It Li "front" Ta "Front of floating panes"
 .It Li "back" Ta "Back of floating panes"
 .It Li "forward" Ta "Forward one floating pane"
@@ -3454,6 +3454,10 @@ move it to an absolute position.
 moves the pane to the given
 .Ar z-index ,
 where zero is the front.
+.Pp
+.Fl M
+begins a mouse drag (only valid if bound to a mouse key binding, see
+.Sx MOUSE SUPPORT ) .
 .Tg movew
 .It Xo Ic move\-window
 .Op Fl abrdk
@@ -5732,6 +5736,8 @@ simple ASCII characters
 the pane number
 .It spaces
 space characters
+.It none
+no border for floating panes
 .El
 .Pp
 .Ql double
@@ -7132,6 +7138,9 @@ is the terminal alternate character set.
 Align text to the left, centre or right of the available space if appropriate.
 .It Ic fill=colour
 Fill the available space with a background colour if appropriate.
+.It Ic dim=percentage
+Dim foreground and background colours by
+.Ar percentage .
 .It Ic width=N
 Set the width of the styled area.
 .Ar N

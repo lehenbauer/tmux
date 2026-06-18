@@ -444,11 +444,11 @@ window_remove_ref(struct window *w, const char *from)
 }
 
 void
-window_set_name(struct window *w, const char *new_name)
+window_set_name(struct window *w, const char *new_name, const char *forbid)
 {
 	char	*name;
 
-	name = clean_name(new_name, "#");
+	name = clean_name(new_name, forbid);
 	if (name != NULL) {
 		free(w->name);
 		w->name = name;
@@ -634,6 +634,8 @@ window_redraw_active_switch(struct window *w, struct window_pane *wp)
 		gc2 = &wp->cached_active_gc;
 		if (!grid_cells_look_equal(gc1, gc2))
 			wp->flags |= PANE_REDRAW;
+		else if (wp->cached_dim != wp->cached_active_dim)
+			wp->flags |= PANE_REDRAW;
 		else {
 			c1 = window_pane_get_palette(wp, gc1->fg);
 			c2 = window_pane_get_palette(wp, gc2->fg);
@@ -677,7 +679,7 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 		 * bottom border.
 		 */
 		TAILQ_FOREACH(wp, &w->z_index, zentry) {
-			if (!window_pane_visible(wp) ||
+			if (!window_pane_is_visible(wp) ||
 			    window_pane_is_floating(wp))
 				continue;
 
@@ -691,7 +693,7 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 	}
 
 	TAILQ_FOREACH(wp, &w->z_index, zentry) {
-		if (!window_pane_visible(wp))
+		if (!window_pane_is_visible(wp))
 			continue;
 		window_pane_full_size_offset(wp, &xoff, &yoff, &sx, &sy);
 		if (!window_pane_is_floating(wp)) {
@@ -709,11 +711,18 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 					continue;
 			}
 		} else {
-			/* Floating - include all borders. */
-			if ((int)x < xoff - 1 || x > xoff + sx)
-				continue;
-			if ((int)y < yoff - 1 || y > yoff + sy)
-				continue;
+			if (window_pane_get_pane_lines(wp) == PANE_LINES_NONE) {
+				if ((int)x < xoff || (int)x >= xoff + (int)sx)
+					continue;
+				if ((int)y < yoff || (int)y >= yoff + (int)sy)
+					continue;
+			} else {
+				/* Floating - include all borders. */
+				if ((int)x < xoff - 1 || x > xoff + sx)
+					continue;
+				if ((int)y < yoff - 1 || y > yoff + sy)
+					continue;
+			}
 		}
 		return (wp);
 	}
@@ -1125,7 +1134,7 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	style_ranges_init(&wp->border_status_line.ranges);
 
 	if (gethostname(host, sizeof host) == 0)
-		screen_set_title(&wp->base, host);
+		screen_set_title(&wp->base, host, 0);
 
 	return (wp);
 }
@@ -1394,7 +1403,7 @@ window_pane_copy_paste(struct window_pane *wp, char *buf, size_t len)
 		    TAILQ_EMPTY(&loop->modes) &&
 		    loop->fd != -1 &&
 		    (~loop->flags & PANE_INPUTOFF) &&
-		    window_pane_visible(loop) &&
+		    window_pane_is_visible(loop) &&
 		    options_get_number(loop->options, "synchronize-panes")) {
 			log_debug("%s: %.*s", __func__, (int)len, buf);
 			window_pane_write(loop, buf, len);
@@ -1412,7 +1421,7 @@ window_pane_copy_key(struct window_pane *wp, key_code key)
 		    TAILQ_EMPTY(&loop->modes) &&
 		    loop->fd != -1 &&
 		    (~loop->flags & PANE_INPUTOFF) &&
-		    window_pane_visible(loop) &&
+		    window_pane_is_visible(loop) &&
 		    options_get_number(loop->options, "synchronize-panes"))
 			input_key_pane(loop, key, NULL);
 	}
@@ -1469,7 +1478,7 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
 }
 
 int
-window_pane_visible(struct window_pane *wp)
+window_pane_is_visible(struct window_pane *wp)
 {
 	if (~wp->window->flags & WINDOW_ZOOMED)
 		return (1);
@@ -2005,7 +2014,7 @@ window_pane_get_bg(struct window_pane *wp)
 
 	c = window_pane_get_bg_control_client(wp);
 	if (c == -1) {
-		tty_default_colours(&defaults, wp);
+		tty_default_colours(&defaults, wp, NULL);
 		if (COLOUR_DEFAULT(defaults.bg))
 			c = window_get_bg_client(wp);
 		else
@@ -2228,6 +2237,8 @@ window_pane_get_pane_status(struct window_pane *wp)
 
 	if (!window_pane_is_floating(wp))
 		return (window_get_pane_status(wp->window));
+	if (window_pane_get_pane_lines(wp) == PANE_LINES_NONE)
+		return (PANE_STATUS_OFF);
 
 	status = options_get_number(wp->options, "pane-border-status");
 	if (status == PANE_STATUS_TOP_FLOATING)

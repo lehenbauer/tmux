@@ -327,6 +327,7 @@ popup_draw_cb(struct client *c, void *data, struct screen_redraw_ctx *rctx)
 		defaults.bg = pd->palette.bg;
 	style_ctx.defaults = &defaults;
 	style_ctx.palette = &pd->palette;
+	style_ctx.dim = 0;
 	style_ctx.hyperlinks = s.hyperlinks;
 
 	if (pd->md != NULL) {
@@ -437,7 +438,7 @@ popup_make_pane(struct popup_data *pd, enum layout_type type)
 		pd->job = NULL;
 	}
 
-	screen_set_title(&pd->s, new_wp->base.title);
+	screen_set_title(&pd->s, new_wp->base.title, 0);
 	screen_free(&new_wp->base);
 	memcpy(&new_wp->base, &pd->s, sizeof wp->base);
 	screen_resize(&new_wp->base, new_wp->sx, new_wp->sy, 1);
