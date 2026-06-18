@@ -40,6 +40,7 @@ struct cmd_search_history_state {
 	const char	*pattern;
 	int		 ignore;
 	int		 regex;
+	int		 join;
 	regex_t		 reg;
 };
 
@@ -62,6 +63,10 @@ static void	cmd_search_history_bounds(struct grid *,
 static u_int	cmd_search_history_count_literal(const char *, const char *,
 		    int);
 static u_int	cmd_search_history_count_regex(regex_t *, const char *);
+static u_int	cmd_search_history_count_matches(
+		    struct cmd_search_history_state *, const char *);
+static char	*cmd_search_history_append(char *, size_t *, const char *,
+		    size_t);
 static int	cmd_search_history_pane(struct window_pane *,
 		    struct cmd_search_history_state *,
 		    struct cmd_search_history_result *);
@@ -70,11 +75,11 @@ static void	cmd_search_history_print(struct cmd *, struct cmdq_item *,
 		    struct cmd_search_history_result *);
 
 const struct cmd_entry cmd_search_history_entry = {
-	.name = "search-history",
+	.name = "whisp-search-history",
 	.alias = NULL,
 
-	.args = { "F:ir", 1, 1, NULL },
-	.usage = "[-ir] [-F format] pattern",
+	.args = { "F:iJrn:", 1, 1, NULL },
+	.usage = "[-iJr] [-F format] [-n max-results] pattern",
 
 	.flags = CMD_AFTERHOOK|CMD_READONLY,
 	.exec = cmd_search_history_exec
@@ -164,6 +169,26 @@ cmd_search_history_count_regex(regex_t *reg, const char *line)
 	return (count);
 }
 
+static u_int
+cmd_search_history_count_matches(struct cmd_search_history_state *cs,
+    const char *line)
+{
+	if (cs->regex)
+		return (cmd_search_history_count_regex(&cs->reg, line));
+	return (cmd_search_history_count_literal(line, cs->pattern, cs->ignore));
+}
+
+static char *
+cmd_search_history_append(char *buf, size_t *len, const char *line,
+    size_t linelen)
+{
+	buf = xrealloc(buf, *len + linelen + 1);
+	memcpy(buf + *len, line, linelen);
+	*len += linelen;
+	buf[*len] = '\0';
+	return (buf);
+}
+
 static int
 cmd_search_history_pane(struct window_pane *wp,
     struct cmd_search_history_state *cs, struct cmd_search_history_result *sr)
@@ -171,9 +196,11 @@ cmd_search_history_pane(struct window_pane *wp,
 	struct screen		*s = &wp->base;
 	struct grid		*gd = s->grid;
 	const struct grid_line	*gl;
-	char			*line;
+	char			*line, *next;
+	size_t			 linelen;
 	u_int			 yy, sx = screen_size_x(s);
 	u_int			 total = gd->hsize + gd->sy, count;
+	uint64_t		 first, last;
 
 	memset(sr, 0, sizeof *sr);
 	cmd_search_history_bounds(gd, sr);
@@ -184,22 +211,36 @@ cmd_search_history_pane(struct window_pane *wp,
 		gl = grid_peek_line(gd, yy);
 		if (gl == NULL || gl->line_number == 0)
 			continue;
+		first = last = gl->line_number;
 
 		line = grid_string_cells(gd, 0, yy, sx, NULL,
-		    GRID_STRING_TRIM_SPACES, s);
-		if (cs->regex)
-			count = cmd_search_history_count_regex(&cs->reg, line);
-		else {
-			count = cmd_search_history_count_literal(line,
-			    cs->pattern, cs->ignore);
+		    cs->join ? 0 : GRID_STRING_TRIM_SPACES, s);
+		linelen = strlen(line);
+		if (cs->join) {
+			while (gl->flags & GRID_LINE_WRAPPED) {
+				if (yy + 1 >= total)
+					break;
+				yy++;
+				gl = grid_peek_line(gd, yy);
+				if (gl == NULL)
+					break;
+				if (gl->line_number != 0)
+					last = gl->line_number;
+				next = grid_string_cells(gd, 0, yy, sx, NULL,
+				    0, s);
+				line = cmd_search_history_append(line, &linelen,
+				    next, strlen(next));
+				free(next);
+			}
 		}
+		count = cmd_search_history_count_matches(cs, line);
 		free(line);
 
 		if (count == 0)
 			continue;
 		if (sr->first_match_line == 0)
-			sr->first_match_line = gl->line_number;
-		sr->last_match_line = gl->line_number;
+			sr->first_match_line = first;
+		sr->last_match_line = last;
 		sr->match_count += count;
 		sr->matching_line_count++;
 	}
@@ -250,15 +291,32 @@ cmd_search_history_exec(struct cmd *self, struct cmdq_item *item)
 	struct cmd_search_history_result  sr;
 	struct cmd_find_state		  fs;
 	struct window_pane		 *wp;
+	char				 *cause;
+	long long			  n;
+	u_int				  limit = 0, printed = 0;
 
 	memset(&cs, 0, sizeof cs);
 	cs.pattern = args_string(args, 0);
 	cs.ignore = args_has(args, 'i');
 	cs.regex = args_has(args, 'r');
+	cs.join = args_has(args, 'J');
 	if (cmd_search_history_compile(&cs, item) != 0)
 		return (CMD_RETURN_ERROR);
+	if (args_has(args, 'n')) {
+		n = args_strtonum(args, 'n', 1, UINT_MAX, &cause);
+		if (cause != NULL) {
+			cmdq_error(item, "max-results %s", cause);
+			free(cause);
+			if (cs.regex)
+				regfree(&cs.reg);
+			return (CMD_RETURN_ERROR);
+		}
+		limit = n;
+	}
 
 	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (limit != 0 && printed >= limit)
+			break;
 		if (!cmd_search_history_pane(wp, &cs, &sr))
 			continue;
 		if (cmd_find_from_pane(&fs, wp, 0) != 0)
@@ -268,6 +326,7 @@ cmd_search_history_exec(struct cmd *self, struct cmdq_item *item)
 			cmd_search_history_print(self, item, fs.s, fs.wl, wp,
 			    &sr);
 		}
+		printed++;
 	}
 
 	if (cs.regex)

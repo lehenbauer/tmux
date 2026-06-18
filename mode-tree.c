@@ -49,6 +49,7 @@ struct mode_tree_data {
 	const struct menu_item	 *menu;
 
 	struct sort_criteria	  sort_crit;
+	const char		 *view_name;
 
 	mode_tree_build_cb        buildcb;
 	mode_tree_draw_cb         drawcb;
@@ -701,6 +702,12 @@ mode_tree_add(struct mode_tree_data *mtd, struct mode_tree_item *parent,
 }
 
 void
+mode_tree_view_name(struct mode_tree_data *mtd, const char *name)
+{
+	mtd->view_name = name;
+}
+
+void
 mode_tree_draw_as_parent(struct mode_tree_item *mti)
 {
 	mti->draw_as_parent = 1;
@@ -884,9 +891,12 @@ mode_tree_draw(struct mode_tree_data *mtd)
 	screen_write_box(&ctx, w, sy - h, BOX_LINES_DEFAULT, NULL, NULL);
 
 	if (mtd->sort_crit.order_seq != NULL) {
-		xasprintf(&text, " %s (sort: %s%s)", mti->name,
+		xasprintf(&text, " %s (sort: %s%s)%s%s%s", mti->name,
 		    sort_order_to_string(mtd->sort_crit.order),
-		    mtd->sort_crit.reversed ? ", reversed" : "");
+		    mtd->sort_crit.reversed ? ", reversed" : "",
+		    mtd->view_name == NULL ? "" : " (view: ",
+		    mtd->view_name == NULL ? "" : mtd->view_name,
+		    mtd->view_name == NULL ? "" : ")");
 	} else
 		xasprintf(&text, " %s", mti->name);
 	if (w - 2 >= strlen(text)) {
@@ -1223,6 +1233,11 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 	struct mode_tree_item	*current, *parent, *mti;
 	u_int			 i, x, y;
 	int			 choice, preview;
+
+	if (mtd->line_size == 0) {
+		*key = KEYC_NONE;
+		return (1);
+	}
 
 	if (KEYC_IS_MOUSE(*key) && m != NULL) {
 		if (cmd_mouse_at(mtd->wp, m, &x, &y, 0) != 0) {
