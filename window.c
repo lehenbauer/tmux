@@ -423,6 +423,8 @@ window_pane_destroy_ready(struct window_pane *wp)
 	 */
 	if (wp->wait_item != NULL && (~wp->flags & PANE_STATUSREADY))
 		return (0);
+	if (wp->editor != NULL && (~wp->flags & PANE_STATUSREADY))
+		return (0);
 	return (1);
 }
 
@@ -795,6 +797,7 @@ window_zoom(struct window_pane *wp)
 	w->flags |= WINDOW_ZOOMED;
 	notify_window("window-layout-changed", w);
 
+	redraw_invalidate_scene(w);
 	return (0);
 }
 
@@ -821,6 +824,7 @@ window_unzoom(struct window *w, int notify)
 	if (notify)
 		notify_window("window-layout-changed", w);
 
+	redraw_invalidate_scene(w);
 	return (0);
 }
 
@@ -877,6 +881,7 @@ window_add_pane(struct window *w, struct window_pane *other, u_int hlimit,
 	else {
 		TAILQ_INSERT_HEAD(&w->z_index, wp, zentry);
 	}
+	redraw_invalidate_scene(w);
 	return (wp);
 }
 
@@ -903,6 +908,7 @@ window_lost_pane(struct window *w, struct window_pane *wp)
 			window_update_focus(w);
 		}
 	}
+	redraw_invalidate_scene(w);
 }
 
 void
@@ -911,6 +917,7 @@ window_remove_pane(struct window *w, struct window_pane *wp)
 	window_lost_pane(w, wp);
 	TAILQ_REMOVE(&w->panes, wp, entry);
 	TAILQ_REMOVE(&w->z_index, wp, zentry);
+	redraw_invalidate_scene(w);
 	window_pane_destroy(wp);
 }
 
@@ -1167,6 +1174,7 @@ static void
 window_pane_destroy(struct window_pane *wp)
 {
 	window_pane_wait_finish(wp);
+	spawn_editor_finish(wp);
 
 	window_pane_reset_mode_all(wp);
 	free(wp->searchstr);
@@ -2204,6 +2212,15 @@ window_pane_status_get_range(struct window_pane *wp, u_int x, u_int y)
 	 * the stored bounds of the range.
 	 */
 	return (style_ranges_get_range(srs, x - wp->xoff - 2));
+}
+
+enum pane_lines
+window_get_pane_lines(struct window *w)
+{
+	struct options	*oo;
+
+	oo = w->options;
+	return (options_get_number(oo, "pane-border-lines"));
 }
 
 enum pane_lines

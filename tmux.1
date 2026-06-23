@@ -363,9 +363,13 @@ Kill the current pane.
 .It z
 Toggle zoom state of the current pane.
 .It {
-Swap the current pane with the previous pane.
+Move floating pane to top-left corner.
 .It }
-Swap the current pane with the next pane.
+Move floating pane to top-right corner.
+.It M-{
+Move floating pane to bottom-left corner.
+.It M-}
+Move floating pane to bottom-right corner.
 .It \[ti]
 Show previous messages from
 .Nm ,
@@ -2896,6 +2900,7 @@ The following keys may be used in client mode:
 .It Li "z" Ta "Suspend selected client"
 .It Li "Z" Ta "Suspend tagged clients"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "O" Ta "Change sort order"
 .It Li "r" Ta "Reverse sort order"
 .It Li "v" Ta "Toggle preview"
@@ -2991,6 +2996,7 @@ The following keys may be used in tree mode:
 .It Li "C\-t" Ta "Tag all items"
 .It Li "\&:" Ta "Run a command for each tagged item"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "H" Ta "Jump to the starting pane"
 .It Li "O" Ta "Change sort order"
 .It Li "r" Ta "Reverse sort order"
@@ -3089,6 +3095,7 @@ The following keys may be used in customize mode:
 .It Li "T" Ta "Tag no items"
 .It Li "C\-t" Ta "Tag all items"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "v" Ta "Toggle option information"
 .It Li "F1 or C\-h" Ta "Display help"
 .It Li "q" Ta "Exit mode"
@@ -3665,7 +3672,7 @@ The
 flag will create an empty pane and forward any output from stdin to it.
 For example:
 .Bd -literal -offset indent
-$ make 2>&1|tmux splitw \-dI &
+$ make 2>&1|tmux new\-pane \-dI &
 .Ed
 .Pp
 All other options have the same meaning as for the
@@ -6473,13 +6480,20 @@ An optional argument specifies flags:
 .Ql r
 means the pattern is a regular expression instead of the default
 .Xr glob 7
-pattern, and
+pattern,
+.Ql z
+means the pattern is a fuzzy match, that is, it matches if its characters
+appear in the string in order but not necessarily consecutively;
+the pattern is split on spaces into separate terms which must all match,
+and
 .Ql i
 means to ignore case.
 For example:
 .Ql #{m:*foo*,#{host}}
 or
-.Ql #{m/ri:\[ha]A,MYVAR} .
+.Ql #{m/ri:\[ha]A,MYVAR}
+or
+.Ql #{m/z:abc,aXbXc} .
 A
 .Ql C
 performs a search for a
@@ -6874,6 +6888,7 @@ The following variables are available, where appropriate:
 .It Li "last_window_index" Ta "" Ta "Index of last window in session"
 .It Li "last_match_line" Ta "" Ta "Last matching line number from whisp-search-history"
 .It Li "line" Ta "" Ta "Line number in the list"
+.It Li "loop_index" Ta "" Ta "Index of item in the W:, P:, S:, or L: loop"
 .It Li "loop_last_flag" Ta "" Ta "1 if last window, pane, session, client in the W:, P:, S:, or L: loop"
 .It Li "match_count" Ta "" Ta "Count of matches from whisp-search-history"
 .It Li "matching_line_count" Ta "" Ta "Count of matching lines from whisp-search-history"
@@ -8016,6 +8031,7 @@ The following keys may be used in buffer mode:
 .It Li "D" Ta "Delete tagged buffers"
 .It Li "e" Ta "Open the buffer in an editor"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "O" Ta "Change sort order"
 .It Li "r" Ta "Reverse sort order"
 .It Li "v" Ta "Toggle preview"

@@ -1856,15 +1856,6 @@ format_cb_keypad_flag(struct format_tree *ft)
 	return (NULL);
 }
 
-/* Callback for loop_last_flag. */
-static void *
-format_cb_loop_last_flag(struct format_tree *ft)
-{
-	if (ft->flags & FORMAT_LAST)
-		return (xstrdup("1"));
-	return (xstrdup("0"));
-}
-
 /* Callback for mouse_all_flag. */
 static void *
 format_cb_mouse_all_flag(struct format_tree *ft)
@@ -3677,9 +3668,6 @@ static const struct format_table_entry format_table[] = {
 	{ "last_window_index", FORMAT_TABLE_STRING,
 	  format_cb_last_window_index
 	},
-	{ "loop_last_flag", FORMAT_TABLE_STRING,
-	  format_cb_loop_last_flag
-	},
 	{ "mouse_all_flag", FORMAT_TABLE_STRING,
 	  format_cb_mouse_all_flag
 	},
@@ -4934,6 +4922,53 @@ format_build_modifiers(struct format_expand_state *es, const char **s,
 	return (list);
 }
 
+/* Fuzzy match a single token (no spaces). */
+static int
+format_fuzzy_match_token(const char *pattern, size_t patternlen,
+    const char *text, int icase)
+{
+	const char	*end = pattern + patternlen;
+
+	while (pattern != end) {
+		if (*text == '\0')
+			return (0);
+		if (icase) {
+			if (tolower((u_char)*pattern) == tolower((u_char)*text))
+				pattern++;
+		} else {
+			if (*pattern == *text)
+				pattern++;
+		}
+		text++;
+	}
+	return (1);
+}
+
+/*
+ * Fuzzy match strings. The pattern is split on spaces into tokens and every
+ * token must match as a sequence.
+ */
+static int
+format_fuzzy_match(const char *pattern, const char *text, int icase)
+{
+	const char	*start;
+	size_t		 len;
+
+	while (*pattern != '\0') {
+		while (*pattern == ' ')
+			pattern++;
+		if (*pattern == '\0')
+			break;
+		start = pattern;
+		while (*pattern != '\0' && *pattern != ' ')
+			pattern++;
+		len = pattern - start;
+		if (!format_fuzzy_match_token(start, len, text, icase))
+			return (0);
+	}
+	return (1);
+}
+
 /* Match against an fnmatch(3) pattern or regular expression. */
 static char *
 format_match(struct format_modifier *fm, const char *pattern, const char *text)
@@ -4944,7 +4979,10 @@ format_match(struct format_modifier *fm, const char *pattern, const char *text)
 
 	if (fm->argc >= 1)
 		s = fm->argv[0];
-	if (strchr(s, 'r') == NULL) {
+	if (strchr(s, 'z') != NULL) {
+		if (!format_fuzzy_match(pattern, text, strchr(s, 'i') != NULL))
+			return (xstrdup("0"));
+	} else if (strchr(s, 'r') == NULL) {
 		if (strchr(s, 'i') != NULL)
 			flags |= FNM_CASEFOLD;
 		if (fnmatch(pattern, text, flags) != 0)
@@ -5083,7 +5121,7 @@ format_loop_sessions(struct format_expand_state *es, const char *fmt)
 	struct evbuffer			 *buffer;
 	size_t				  size;
 	struct session			 *s, **l;
-	int				  i, n, last = 0;
+	int				  i, n;
 
 	if (format_choose(es, fmt, &all, &active, 0) != 0) {
 		all = xstrdup(fmt);
@@ -5104,9 +5142,9 @@ format_loop_sessions(struct format_expand_state *es, const char *fmt)
 			use = active;
 		else
 			use = all;
-		if (i == n - 1)
-			last = FORMAT_LAST;
-		nft = format_create(c, item, FORMAT_NONE, ft->flags|last);
+		nft = format_create(c, item, FORMAT_NONE, ft->flags);
+		format_add(nft, "loop_index", "%d", i);
+		format_add(nft, "loop_last_flag", "%d", i == n - 1);
 		format_defaults(nft, ft->c, s, NULL, NULL);
 		format_copy_state(&next, es, 0);
 		next.ft = nft;
@@ -5198,7 +5236,7 @@ format_loop_windows(struct format_expand_state *es, const char *fmt)
 	size_t				  size;
 	struct winlink			 *wl, **l;
 	struct window			 *w;
-	int				  i, n, last = 0;
+	int				  i, n;
 
 	if (ft->s == NULL) {
 		format_log(es, "window loop but no session");
@@ -5223,10 +5261,10 @@ format_loop_windows(struct format_expand_state *es, const char *fmt)
 			use = active;
 		else
 			use = all;
-		if (i == n - 1)
-			last = FORMAT_LAST;
 		nft = format_create(c, item, FORMAT_WINDOW|w->id,
-		    ft->flags|last);
+		    ft->flags);
+		format_add(nft, "loop_index", "%d", i);
+		format_add(nft, "loop_last_flag", "%d", i == n - 1);
 		format_defaults(nft, ft->c, ft->s, wl, NULL);
 
 		/* Add neighbor window data to the format tree. */
@@ -5273,7 +5311,7 @@ format_loop_panes(struct format_expand_state *es, const char *fmt)
 	struct evbuffer			*buffer;
 	size_t				 size;
 	struct window_pane		*wp, **l;
-	int				  i, n, last = 0;
+	int				  i, n;
 
 	if (ft->w == NULL) {
 		format_log(es, "pane loop but no window");
@@ -5297,10 +5335,10 @@ format_loop_panes(struct format_expand_state *es, const char *fmt)
 			use = active;
 		else
 			use = all;
-		if (i == n - 1)
-			last = FORMAT_LAST;
 		nft = format_create(c, item, FORMAT_PANE|wp->id,
-		    ft->flags|last);
+		    ft->flags);
+		format_add(nft, "loop_index", "%d", i);
+		format_add(nft, "loop_last_flag", "%d", i == n - 1);
 		format_defaults(nft, ft->c, ft->s, ft->wl, wp);
 		format_copy_state(&next, es, 0);
 		next.ft = nft;
@@ -5335,7 +5373,7 @@ format_loop_clients(struct format_expand_state *es, const char *fmt)
 	char				 *expanded, *value;
 	struct evbuffer			 *buffer;
 	size_t				  size;
-	int				  i, n, last = 0;
+	int				  i, n;
 
 	buffer = evbuffer_new();
 	if (buffer == NULL)
@@ -5345,9 +5383,9 @@ format_loop_clients(struct format_expand_state *es, const char *fmt)
 	for (i = 0; i < n; i++) {
 		c = l[i];
 		format_log(es, "client loop: %s", c->name);
-		if (i == n - 1)
-			last = FORMAT_LAST;
-		nft = format_create(c, item, 0, ft->flags|last);
+		nft = format_create(c, item, 0, ft->flags);
+		format_add(nft, "loop_index", "%d", i);
+		format_add(nft, "loop_last_flag", "%d", i == n - 1);
 		format_defaults(nft, c, ft->s, ft->wl, ft->wp);
 		format_copy_state(&next, es, 0);
 		next.ft = nft;
