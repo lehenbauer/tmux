@@ -285,7 +285,7 @@ style_tostring(struct style *sy)
 	struct grid_cell	*gc = &sy->gc;
 	int			 off = 0;
 	const char		*comma = "", *tmp = "";
-	static char		 s[256];
+	static char		 s[1024];
 	char			 b[21];
 
 	*s = '\0';
@@ -434,6 +434,29 @@ style_apply(struct grid_cell *gc, struct options *oo, const char *name,
 	style_add(gc, oo, name, ft);
 }
 
+/* Parse a single colour into a style */
+int
+style_parse_colour(struct style *sy, const struct grid_cell *base,
+    const char *s)
+{
+	int	c;
+
+	style_set(sy, base);
+
+	if (*s == '\0') {
+		sy->gc.fg = -1;
+		return (0);
+	}
+
+	if ((c = colour_fromstring(s)) == -1)
+		return (-1);
+	if (c == 8)
+		sy->gc.fg = base->fg;
+	else
+		sy->gc.fg = c;
+	return (0);
+}
+
 /* Initialize style from cell. */
 void
 style_set(struct style *sy, const struct grid_cell *gc)
@@ -454,22 +477,33 @@ void
 style_set_scrollbar_style_from_option(struct style *sb_style,
     struct options *oo)
 {
-	struct style	*sy;
+	const struct options_table_entry	*oe;
+	struct options_entry			*o;
+	const char				*s;
+	char					*style, *expanded;
 
-	sy = options_string_to_style(oo, "pane-scrollbars-style", NULL);
-	if (sy == NULL) {
-		style_set(sb_style, &grid_default_cell);
-		sb_style->width = PANE_SCROLLBARS_DEFAULT_WIDTH;
-		sb_style->pad = PANE_SCROLLBARS_DEFAULT_PADDING;
-		utf8_set(&sb_style->gc.data, PANE_SCROLLBARS_CHARACTER);
-	} else {
-		style_copy(sb_style, sy);
-		if (sb_style->width < 1)
-			sb_style->width = PANE_SCROLLBARS_DEFAULT_WIDTH;
-		if (sb_style->pad < 0)
-			sb_style->pad = PANE_SCROLLBARS_DEFAULT_PADDING;
-		utf8_set(&sb_style->gc.data, PANE_SCROLLBARS_CHARACTER);
+	style_set(sb_style, &grid_default_cell);
+	o = options_get(oo, "pane-scrollbars-style");
+	if (o == NULL)
+		fatalx("missing pane-scrollbars-style");
+	oe = options_table_entry(o);
+	style = format_single(NULL, oe->default_str, NULL, NULL, NULL, NULL);
+	if (style_parse(sb_style, &grid_default_cell, style) != 0)
+		fatalx("bad pane-scrollbars-style default");
+
+	s = options_get_string(oo, "pane-scrollbars-style");
+	if (s != NULL) {
+		expanded = format_single(NULL, s, NULL, NULL, NULL, NULL);
+		if (style_parse(sb_style, &grid_default_cell, expanded) != 0)
+			style_parse(sb_style, &grid_default_cell, style);
+		free(expanded);
 	}
+	free(style);
+	if (sb_style->width < 1)
+		sb_style->width = PANE_SCROLLBARS_DEFAULT_WIDTH;
+	if (sb_style->pad < 0)
+		sb_style->pad = PANE_SCROLLBARS_DEFAULT_PADDING;
+	utf8_set(&sb_style->gc.data, PANE_SCROLLBARS_CHARACTER);
 }
 
 /* Initialize style ranges. */

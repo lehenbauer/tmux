@@ -254,7 +254,7 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 	proc_loop(server_proc, server_loop);
 
 	job_kill_all();
-	status_prompt_save_history();
+	prompt_save_history();
 
 	exit(0);
 }
@@ -498,6 +498,7 @@ server_child_exited(pid_t pid, int status)
 				wp->flags |= PANE_EXITED;
 
 				window_pane_wait_finish(wp);
+				spawn_editor_finish(wp);
 
 				if (window_pane_destroy_ready(wp))
 					server_destroy_pane(wp, 1);
