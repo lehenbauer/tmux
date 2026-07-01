@@ -91,7 +91,7 @@ grid_check_is_clear(struct grid *gd)
 	assert(gd->linedata != NULL);
 
 	ny = gd->hsize + gd->sy;
-	for (yy = 0; yy < ny; yy++) {
+	for (yy = gd->hsize; yy < ny; yy++) {
 		gl = &gd->linedata[yy];
 
 		assert(gl->celldata == NULL);
@@ -101,6 +101,7 @@ grid_check_is_clear(struct grid *gd)
 		assert(gl->extdsize == 0);
 		assert(gl->flags == 0);
 		assert(gl->time == 0);
+		assert(gl->line_number == 0);
 	}
 }
 #else
