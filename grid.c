@@ -18,6 +18,9 @@
 
 #include <sys/types.h>
 
+#ifdef __APPLE__
+#include <assert.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -55,6 +58,62 @@ static const struct grid_cell grid_cleared_cell = {
 static const struct grid_cell_entry grid_cleared_entry = {
 	{ .data = { 0, 8, 8, ' ' } }, GRID_FLAG_CLEARED
 };
+
+#ifdef __APPLE__
+static void
+grid_check_lines(struct grid *gd)
+{
+	u_int	i, j;
+
+	for (i = 0; i < gd->hsize + gd->sy; i++) {
+		for (j = i + 1; j < gd->hsize + gd->sy; j++) {
+			if (gd->linedata[i].celldata != NULL)
+				assert(gd->linedata[i].celldata != gd->linedata[j].celldata);
+			if (gd->linedata[i].extddata != NULL)
+				assert(gd->linedata[i].extddata != gd->linedata[j].extddata);
+		}
+	}
+}
+
+void
+grid_check_is_clear(struct grid *gd)
+{
+	struct grid_line	*gl;
+	u_int			 yy, ny;
+
+	assert(gd != NULL);
+
+	if (gd->sy == 0) {
+		assert(gd->linedata == NULL);
+		return;
+	}
+
+	assert(gd->linedata != NULL);
+
+	ny = gd->hsize + gd->sy;
+	for (yy = 0; yy < ny; yy++) {
+		gl = &gd->linedata[yy];
+
+		assert(gl->celldata == NULL);
+		assert(gl->cellused == 0);
+		assert(gl->cellsize == 0);
+		assert(gl->extddata == NULL);
+		assert(gl->extdsize == 0);
+		assert(gl->flags == 0);
+		assert(gl->time == 0);
+	}
+}
+#else
+static void
+grid_check_lines(__unused struct grid *gd)
+{
+}
+
+void
+grid_check_is_clear(__unused struct grid *gd)
+{
+}
+#endif
 
 /* Store cell in entry. */
 static void
@@ -287,9 +346,17 @@ grid_set_tab(struct grid_cell *gc, u_int width)
 static void
 grid_free_line(struct grid *gd, u_int py)
 {
-	free(gd->linedata[py].celldata);
-	free(gd->linedata[py].extddata);
-	memset(&gd->linedata[py], 0, sizeof gd->linedata[py]);
+	struct grid_line	*gl = &gd->linedata[py];
+
+#ifdef __APPLE__
+	assert(gl->cellused <= gl->cellsize);
+	assert(gl->extdsize == 0 || gl->extddata != NULL);
+	assert(gl->cellsize == 0 || gl->celldata != NULL);
+#endif
+
+	free(gl->celldata);
+	free(gl->extddata);
+	memset(gl, 0, sizeof *gl);
 }
 
 /* Free several lines. */
@@ -308,28 +375,18 @@ grid_create(u_int sx, u_int sy, u_int hlimit)
 {
 	struct grid	*gd;
 
-	gd = xmalloc(sizeof *gd);
+	gd = xcalloc(1, sizeof *gd);
 	gd->sx = sx;
 	gd->sy = sy;
 
 	if (hlimit != 0)
 		gd->flags = GRID_HISTORY;
-	else
-		gd->flags = 0;
-
-	gd->hscrolled = 0;
-	gd->hsize = 0;
 	gd->hlimit = hlimit;
-
-	gd->scroll_added = 0;
-	gd->scroll_collected = 0;
-	gd->scroll_generation = 0;
 
 	if (gd->sy != 0)
 		gd->linedata = xcalloc(gd->sy, sizeof *gd->linedata);
-	else
-		gd->linedata = NULL;
 
+	grid_check_is_clear(gd);
 	return (gd);
 }
 
@@ -449,6 +506,8 @@ grid_scroll_history(struct grid *gd, u_int bg)
 	gd->linedata[gd->hsize].time = current_time;
 	gd->hsize++;
 	gd->scroll_added++;
+
+	grid_check_lines(gd);
 }
 
 /* Clear the history. */
@@ -498,6 +557,8 @@ grid_scroll_history_region(struct grid *gd, u_int upper, u_int lower, u_int bg)
 	gd->hscrolled++;
 	gd->hsize++;
 	gd->scroll_added++;
+
+	grid_check_lines(gd);
 }
 
 /* Expand line to fit to cell. */
@@ -759,6 +820,8 @@ grid_move_lines(struct grid *gd, u_int dy, u_int py, u_int ny, u_int bg)
 	}
 	if (py != 0 && (py < dy || py >= dy + ny))
 		gd->linedata[py - 1].flags &= ~GRID_LINE_WRAPPED;
+
+	grid_check_lines(gd);
 }
 
 /* Move a group of cells. */
@@ -1248,6 +1311,8 @@ grid_duplicate_lines(struct grid *dst, u_int dy, struct grid *src, u_int sy,
 		sy++;
 		dy++;
 	}
+
+	grid_check_lines(dst);
 }
 
 /* Mark line as dead. */
@@ -1544,6 +1609,8 @@ grid_reflow(struct grid *gd, u_int sx)
 	gd->linedata = target->linedata;
 	free(target);
 	gd->scroll_generation++;
+
+	grid_check_lines(gd);
 }
 
 /* Convert to position based on wrapped lines. */
