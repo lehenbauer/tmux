@@ -41,6 +41,12 @@ static char	*cmd_whisp_capture_pane_append(char *, size_t *, const char *,
 		    size_t);
 static char	*cmd_whisp_capture_pane_lines(struct args *, struct window_pane *,
 		    u_int, u_int, uint64_t, u_int, size_t *);
+static void	cmd_whisp_capture_pane_position(struct args *, u_char,
+		    struct cmdq_item *, struct grid *, u_int, u_int *);
+static void	cmd_whisp_capture_pane_grid_range(struct args *,
+		    struct cmdq_item *, struct grid *, u_int *, u_int *);
+static char	*cmd_whisp_capture_pane_line_range(struct args *,
+		    struct cmdq_item *, struct window_pane *, size_t *);
 static enum cmd_retval cmd_whisp_capture_pane_print(struct cmdq_item *, char *,
 		    size_t);
 
@@ -48,8 +54,9 @@ const struct cmd_entry cmd_whisp_capture_pane_entry = {
 	.name = "whisp-capture-pane",
 	.alias = NULL,
 
-	.args = { "A:B:CeJNn:qTt:", 0, 0, NULL },
+	.args = { "A:B:CeE:JLNn:qS:Tt:", 0, 0, NULL },
 	.usage = "[-CeJNqT] [-A after-line | -B before-line] -n lines "
+		 "[-L [-CeNqT] [-E end-line] [-S start-line]] "
 		 CMD_TARGET_PANE_USAGE,
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -191,6 +198,100 @@ cmd_whisp_capture_pane_lines(struct args *args, struct window_pane *wp,
 	return (buf);
 }
 
+static void
+cmd_whisp_capture_pane_position(struct args *args, u_char flag,
+    struct cmdq_item *item, struct grid *gd, u_int default_py, u_int *py)
+{
+	const char	*value = args_get(args, flag);
+	char		*cause;
+	int		 n;
+
+	if (value == NULL) {
+		*py = default_py;
+		return;
+	}
+	if (strcmp(value, "-") == 0) {
+		if (flag == 'S')
+			*py = 0;
+		else
+			*py = gd->hsize + gd->sy - 1;
+		return;
+	}
+
+	n = args_strtonum_and_expand(args, flag, INT_MIN, SHRT_MAX, item,
+	    &cause);
+	if (cause != NULL) {
+		*py = default_py;
+		free(cause);
+	} else if (n < 0 && (u_int)-n > gd->hsize)
+		*py = 0;
+	else
+		*py = gd->hsize + n;
+	if (*py > gd->hsize + gd->sy - 1)
+		*py = gd->hsize + gd->sy - 1;
+}
+
+static void
+cmd_whisp_capture_pane_grid_range(struct args *args, struct cmdq_item *item,
+    struct grid *gd, u_int *top, u_int *bottom)
+{
+	u_int	tmp;
+
+	cmd_whisp_capture_pane_position(args, 'S', item, gd, gd->hsize, top);
+	cmd_whisp_capture_pane_position(args, 'E', item, gd,
+	    gd->hsize + gd->sy - 1, bottom);
+	if (*bottom < *top) {
+		tmp = *bottom;
+		*bottom = *top;
+		*top = tmp;
+	}
+}
+
+static char *
+cmd_whisp_capture_pane_line_range(struct args *args, struct cmdq_item *item,
+    struct window_pane *wp, size_t *len)
+{
+	struct screen		*s = &wp->base;
+	struct grid		*gd = s->grid;
+	const struct grid_line	*gl;
+	struct grid_cell	*gc = NULL;
+	char			*buf = NULL, *line, prefix[64];
+	size_t			 linelen;
+	u_int			 i, sx = screen_size_x(s), top, bottom;
+	int			 flags = 0;
+
+	if (args_has(args, 'e'))
+		flags |= GRID_STRING_WITH_SEQUENCES;
+	if (args_has(args, 'C'))
+		flags |= GRID_STRING_ESCAPE_SEQUENCES;
+	if (!args_has(args, 'T'))
+		flags |= GRID_STRING_EMPTY_CELLS;
+	if (!args_has(args, 'N'))
+		flags |= GRID_STRING_TRIM_SPACES;
+
+	cmd_whisp_capture_pane_grid_range(args, item, gd, &top, &bottom);
+	for (i = top; i <= bottom; i++) {
+		gl = grid_peek_line(gd, i);
+		if (gl == NULL || gl->line_number == 0)
+			continue;
+
+		xsnprintf(prefix, sizeof prefix, "%llu\t",
+		    (unsigned long long)gl->line_number);
+		buf = cmd_whisp_capture_pane_append(buf, len, prefix,
+		    strlen(prefix));
+
+		line = grid_string_cells(gd, 0, i, sx, &gc, flags, s);
+		linelen = strlen(line);
+		buf = cmd_whisp_capture_pane_append(buf, len, line, linelen);
+		buf[(*len)++] = '\n';
+
+		free(line);
+	}
+	if (buf == NULL)
+		buf = xstrdup("");
+	return (buf);
+}
+
 static enum cmd_retval
 cmd_whisp_capture_pane_print(struct cmdq_item *item, char *buf, size_t len)
 {
@@ -230,7 +331,28 @@ cmd_whisp_capture_pane_exec(struct cmd *self, struct cmdq_item *item)
 	long long		 n;
 	char			*cause, *buf;
 	size_t			 len = 0;
+	int			 anchor_mode, line_mode;
 
+	anchor_mode = args_has(args, 'A') || args_has(args, 'B');
+	line_mode = args_has(args, 'L') || args_has(args, 'S') ||
+	    args_has(args, 'E');
+
+	if (!anchor_mode) {
+		if (!args_has(args, 'L')) {
+			cmdq_error(item, "missing -L");
+			return (CMD_RETURN_ERROR);
+		}
+		if (args_has(args, 'J')) {
+			cmdq_error(item, "-L and -J are incompatible");
+			return (CMD_RETURN_ERROR);
+		}
+		buf = cmd_whisp_capture_pane_line_range(args, item, wp, &len);
+		return (cmd_whisp_capture_pane_print(item, buf, len));
+	}
+	if (line_mode) {
+		cmdq_error(item, "-L, -S and -E are incompatible with -A or -B");
+		return (CMD_RETURN_ERROR);
+	}
 	if (args_has(args, 'A') == args_has(args, 'B')) {
 		cmdq_error(item, "exactly one of -A or -B must be specified");
 		return (CMD_RETURN_ERROR);
