@@ -59,7 +59,7 @@ static const struct grid_cell_entry grid_cleared_entry = {
 	{ .data = { 0, 8, 8, ' ' } }, GRID_FLAG_CLEARED
 };
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(TMUX_GRID_DEBUG)
 static void
 grid_check_lines(struct grid *gd)
 {
@@ -349,7 +349,7 @@ grid_free_line(struct grid *gd, u_int py)
 {
 	struct grid_line	*gl = &gd->linedata[py];
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(TMUX_GRID_DEBUG)
 	assert(gl->cellused <= gl->cellsize);
 	assert(gl->extdsize == 0 || gl->extddata != NULL);
 	assert(gl->cellsize == 0 || gl->celldata != NULL);
