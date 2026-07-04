@@ -1,24 +1,34 @@
 # Whisp tmux Upstream Updates
 
-This fork uses `master` as the Whisp shipping branch: upstream tmux plus
-Whisp-specific protocol, capture, search, and telemetry changes. Keep
-`upstream/master` as the untouched tmux source of truth, and bring it forward
-through short-lived merge branches.
+Whisp ships from a `whisp-<release>` branch (currently `whisp-3.7b`): the
+latest upstream **release tag** plus the Whisp patch series (protocol,
+capture, search, and telemetry changes). Do not base customer releases on
+upstream `master`-of-the-day: master carries in-flight debugging scaffolding
+that releases never ship (2026-07-04: upstream's `__APPLE__`-gated
+`grid_check_lines` was O(history²) per scrolled linefeed, landed on master
+June 29, shipped to Whisp customers July 3, deleted upstream July 5 window —
+release 3.7b never contained it). `master` remains an integration branch for
+tracking upstream master when a specific unreleased commit is needed; record
+the SHA and reason in ai-whisperer `docs/agent_memory/decisions.md`.
 
 ## Branch Flow
 
-Use a dated branch for each update:
+For each new upstream release tag:
 
 ```sh
-git fetch --prune origin upstream
-git switch master
-git pull --ff-only origin master
-git switch -c merge/upstream-YYYY-MM-DD
-git merge upstream/master
+git fetch --prune origin upstream --tags
+git switch -c whisp-<tag> <tag>
+git cherry-pick <whisp patch series>   # see previous whisp-* branch history
 ```
 
-Use merge commits, not rebases. The merge commit records exactly when Whisp
-picked up upstream tmux. Do not push to `upstream`.
+Keep Whisp work in plain commits only — never introduce or evolve Whisp
+functionality inside a merge commit's conflict resolution. (Lesson: protocol
+v4 and the `whisp_pane_*` formats lived only inside merge `4d034476` and were
+silently missed by a cherry-pick series; recovered in `b820d504`.) After the
+series lands, diff the whisp surfaces against the previous shipping branch and
+confirm zero whisp-content differences.
+
+Do not push to `upstream`.
 
 If the merge has conflicts, preserve Whisp-specific public surfaces unless the
 user explicitly decides to change them:
