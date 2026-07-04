@@ -2743,13 +2743,15 @@ the end of the visible pane.
 The default is to capture only the visible contents of the pane.
 .Tg whisp-capture-pane
 .It Xo Ic whisp\-capture\-pane
-.Op Fl CeJNqT
+.Op Fl CeJLNqT
 .Oo Fl A Ar after\-line | Fl B Ar before\-line Oc
+.Op Fl E Ar end\-line
 .Fl n Ar lines
+.Op Fl S Ar start\-line
 .Op Fl t Ar target\-pane
 .Xc
 Capture pane lines using immutable line numbers.
-Exactly one of
+In anchor mode, exactly one of
 .Fl A
 or
 .Fl B
@@ -2775,9 +2777,25 @@ If the requested line number is not present in the retained history or visible
 pane, an error is returned unless
 .Fl q
 is given, in which case no output is produced.
+.Pp
+In range mode,
+.Fl L
+is specified without
+.Fl A
+or
+.Fl B .
+.Fl S
+and
+.Fl E
+have the same meaning as for
+.Ic capture\-pane .
+Each output line is prefixed with the immutable line number and a tab.
+Range mode captures physical rows and
+.Fl J
+is not allowed with
+.Fl L .
 .Fl e ,
 .Fl C ,
-.Fl J ,
 .Fl T ,
 and
 .Fl N
@@ -2785,7 +2803,7 @@ have the same meaning as for
 .Ic capture\-pane .
 .It Xo
 .Ic choose\-client
-.Op Fl NryZ
+.Op Fl hkNryZ
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl K Ar key\-format
@@ -2822,9 +2840,11 @@ The following keys may be used in client mode:
 .It Li "z" Ta "Suspend selected client"
 .It Li "Z" Ta "Suspend tagged clients"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "O" Ta "Change sort order"
 .It Li "r" Ta "Reverse sort order"
 .It Li "v" Ta "Toggle preview"
+.It Li "i" Ta "Change view (preview and client information)"
 .It Li "F1 or C\-h" Ta "Display help"
 .It Li "q" Ta "Exit mode"
 .El
@@ -2856,12 +2876,20 @@ If a filter would lead to an empty list, it is ignored.
 specifies the format for each item in the list and
 .Fl K
 a format for each shortcut key; both are evaluated once for each line.
+.Pp
 .Fl N
 starts without the preview or if given twice with the larger preview.
-This command works only if at least one client is attached.
+.Fl h
+hides the pane containing the mode.
+.Fl k
+kills the pane when the mode is exited.
+.Pp
+The
+.Ic choose-client
+command works only if at least one client is attached.
 .It Xo
 .Ic choose\-tree
-.Op Fl GNrswyZ
+.Op Fl GhikNrswyZ
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl K Ar key\-format
@@ -2909,10 +2937,12 @@ The following keys may be used in tree mode:
 .It Li "C\-t" Ta "Tag all items"
 .It Li "\&:" Ta "Run a command for each tagged item"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "H" Ta "Jump to the starting pane"
 .It Li "O" Ta "Change sort order"
 .It Li "r" Ta "Reverse sort order"
 .It Li "v" Ta "Toggle preview"
+.It Li "i" Ta "Change view (preview and session, window and pane information)"
 .It Li "F1 or C\-h" Ta "Display help"
 .It Li "q" Ta "Exit mode"
 .El
@@ -2946,15 +2976,32 @@ If a filter would lead to an empty list, it is ignored.
 specifies the format for each item in the tree and
 .Fl K
 a format for each shortcut key; both are evaluated once for each line.
-.Fl N
-starts without the preview or if given twice with the larger preview.
 .Fl G
 includes all sessions in any session groups in the tree rather than only the
 first.
-This command works only if at least one client is attached.
+.Pp
+.Fl N
+starts without the preview or if given twice with the larger preview.
+.Fl i
+starts showing client information instead of the preview.
+.Fl h
+hides the pane containing the mode.
+.Fl k
+kills the pane when the mode is exited.
+.Fl h
+and
+.Fl k
+are intended to ease use of the mode in a floating pane; for example:
+.Bd -literal -offset indent
+bind s 'new-pane -x50% -y50% -E; choose-tree -hks'
+.Ed
+.Pp
+The
+.Ic choose-tree
+command works only if at least one client is attached.
 .It Xo
 .Ic customize\-mode
-.Op Fl NZ
+.Op Fl kNZ
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl t Ar target\-pane
@@ -2989,6 +3036,7 @@ The following keys may be used in customize mode:
 .It Li "T" Ta "Tag no items"
 .It Li "C\-t" Ta "Tag all items"
 .It Li "f" Ta "Enter a format to filter items"
+.It Li "c" Ta "Clear the current filter"
 .It Li "v" Ta "Toggle option information"
 .It Li "F1 or C\-h" Ta "Display help"
 .It Li "q" Ta "Exit mode"
@@ -3000,9 +3048,60 @@ the item in the list is not shown, otherwise it is shown.
 If a filter would lead to an empty list, it is ignored.
 .Fl F
 specifies the format for each item in the tree.
+.Pp
 .Fl N
 starts without the option information.
-This command works only if at least one client is attached.
+.Fl k
+kills the pane when the mode is exited.
+.Pp
+The
+.Ic customize-mode
+command works only if at least one client is attached.
+.It Xo
+.Ic switch\-mode
+.Op Fl kswZ
+.Op Fl F Ar format
+.Op Fl t Ar target\-pane
+.Op Ar command
+.Xc
+Put a pane into switch mode, where a session or window may be chosen
+interactively from a list.
+Each session or window is shown on one line and the list is narrowed by typing:
+the typed text is matched against each item with fuzzy
+matching and only matching items are shown, sorted by how well they match.
+.Fl s
+lists sessions (the default) and
+.Fl w
+lists windows.
+.Fl Z
+zooms the pane.
+The following keys may be used in switch mode:
+.Bl -column "KeyXXX" "Function" -offset indent
+.It Sy "Key" Ta Sy "Function"
+.It Li "Enter" Ta "Choose the selected item"
+.It Li "Up" Ta "Select the previous item"
+.It Li "Down" Ta "Select the next item"
+.It Li "Escape" Ta "Exit mode"
+.El
+.Pp
+After a session or window is chosen, the first instance of
+.Ql %%
+and all instances of
+.Ql %1
+are replaced by the target in
+.Ar command
+and the result executed as a command.
+If
+.Ar command
+is not given, "switch\-client \-Zt \[aq]%%\[aq]" is used.
+.Fl F
+specifies the format for each item in the list.
+.Fl k
+kills the pane when the mode is exited.
+.Pp
+The appearance of matched characters is controlled by the
+.Ic switch\-mode\-match\-style
+option.
 .It Xo
 .Tg displayp
 .Ic display\-panes
@@ -4057,10 +4156,11 @@ also lists only keys in
 specifies a prefix to print before each key.
 .Fl a
 lists the command for keys that do not have a note rather than skipping them.
-.Tg search-history
-.It Xo Ic search\-history
-.Op Fl ir
+.Tg whisp-search-history
+.It Xo Ic whisp\-search\-history
+.Op Fl iJr
 .Op Fl F Ar format
+.Op Fl n Ar max\-results
 .Ar match\-string
 .Xc
 Search for
@@ -4069,6 +4169,10 @@ in the retained history and visible content of all panes on the server.
 One line is printed for each matching pane.
 .Fl i
 ignores case and
+.Fl J
+joins wrapped physical rows before matching.
+.Fl n
+limits the number of matching panes printed.
 .Fl r
 treats
 .Ar match\-string
@@ -6581,7 +6685,7 @@ The following variables are available, where appropriate:
 .It Li "cursor_very_visible" Ta "" Ta "1 if the cursor is in very visible mode"
 .It Li "cursor_x" Ta "" Ta "Cursor X position in pane"
 .It Li "cursor_y" Ta "" Ta "Cursor Y position in pane"
-.It Li "first_match_line" Ta "" Ta "First matching line number from search-history"
+.It Li "first_match_line" Ta "" Ta "First matching line number from whisp-search-history"
 .It Li "history_bytes" Ta "" Ta "Number of bytes in window history"
 .It Li "history_limit" Ta "" Ta "Maximum window history lines"
 .It Li "history_size" Ta "" Ta "Size of history in lines"
@@ -6607,11 +6711,11 @@ The following variables are available, where appropriate:
 .It Li "keypad_cursor_flag" Ta "" Ta "Pane keypad cursor flag"
 .It Li "keypad_flag" Ta "" Ta "Pane keypad flag"
 .It Li "last_window_index" Ta "" Ta "Index of last window in session"
-.It Li "last_match_line" Ta "" Ta "Last matching line number from search-history"
+.It Li "last_match_line" Ta "" Ta "Last matching line number from whisp-search-history"
 .It Li "line" Ta "" Ta "Line number in the list"
 .It Li "loop_last_flag" Ta "" Ta "1 if last window, pane, session, client in the W:, P:, S:, or L: loop"
-.It Li "match_count" Ta "" Ta "Count of matches from search-history"
-.It Li "matching_line_count" Ta "" Ta "Count of matching lines from search-history"
+.It Li "match_count" Ta "" Ta "Count of matches from whisp-search-history"
+.It Li "matching_line_count" Ta "" Ta "Count of matching lines from whisp-search-history"
 .It Li "mouse_all_flag" Ta "" Ta "Pane mouse all flag"
 .It Li "mouse_any_flag" Ta "" Ta "Pane mouse any flag"
 .It Li "mouse_button_flag" Ta "" Ta "Pane mouse button flag"
@@ -6688,8 +6792,8 @@ The following variables are available, where appropriate:
 .It Li "prev_window_active" Ta "" Ta "1 if previous window in W: loop is active"
 .It Li "prev_window_index" Ta "" Ta "Index of previous window in W: loop"
 .It Li "rectangle_toggle" Ta "" Ta "1 if rectangle selection is activated"
-.It Li "retained_first_line" Ta "" Ta "First retained line number from search-history"
-.It Li "retained_last_line" Ta "" Ta "Last retained line number from search-history"
+.It Li "retained_first_line" Ta "" Ta "First retained line number from whisp-search-history"
+.It Li "retained_last_line" Ta "" Ta "Last retained line number from whisp-search-history"
 .It Li "scroll_position" Ta "" Ta "Scroll position in copy mode"
 .It Li "scroll_region_lower" Ta "" Ta "Bottom of scroll region in pane"
 .It Li "scroll_region_upper" Ta "" Ta "Top of scroll region in pane"
@@ -6737,6 +6841,12 @@ The following variables are available, where appropriate:
 .It Li "uid" Ta "" Ta "Server UID"
 .It Li "user" Ta "" Ta "Server user"
 .It Li "version" Ta "" Ta "Server version"
+.It Li "whisp_pane_activity" Ta "" Ta "Time of pane last output"
+.It Li "whisp_pane_activity_seq" Ta "" Ta "Pane output activity sequence"
+.It Li "whisp_pane_input_bytes" Ta "" Ta "Bytes written to pane since creation"
+.It Li "whisp_pane_input_seq" Ta "" Ta "Pane input sequence"
+.It Li "whisp_pane_input_time" Ta "" Ta "Time of pane last input"
+.It Li "whisp_pane_output_bytes" Ta "" Ta "Bytes read from pane since creation"
 .It Li "whisp_pane_status_json" Ta "" Ta "Whisp pane status as JSON"
 .It Li "whisp_shell_command" Ta "" Ta "Whisp shell command"
 .It Li "whisp_shell_cwd" Ta "" Ta "Whisp shell working directory"

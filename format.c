@@ -4002,6 +4002,24 @@ static const struct format_table_entry format_table[] = {
 	{ "version", FORMAT_TABLE_STRING,
 	  format_cb_version
 	},
+	{ "whisp_pane_activity", FORMAT_TABLE_TIME,
+	  format_cb_pane_activity
+	},
+	{ "whisp_pane_activity_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_activity_seq
+	},
+	{ "whisp_pane_input_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_bytes
+	},
+	{ "whisp_pane_input_seq", FORMAT_TABLE_STRING,
+	  format_cb_pane_input_seq
+	},
+	{ "whisp_pane_input_time", FORMAT_TABLE_TIME,
+	  format_cb_pane_input_time
+	},
+	{ "whisp_pane_output_bytes", FORMAT_TABLE_STRING,
+	  format_cb_pane_output_bytes
+	},
 	{ "whisp_pane_status_json", FORMAT_TABLE_STRING,
 	  format_cb_whisp_pane_status_json
 	},
