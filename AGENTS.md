@@ -2,7 +2,7 @@
 
 # Core Engineering Mandates
 
-- **Simplicity & Iteration:** Write the simplest code that solves the problem. Do not optimize prematurely. Work in small, reversible, verifiable iterations rather than attempting massive, single-pass changes, especially in terminal state handling.
+- **Simplicity & Verifiable Steps:** Write the simplest code that solves the problem. Do not optimize prematurely. Work in reversible, verifiable increments at the largest step size you can still fully verify; drop to small iterations when behavior is unstable or your model of the system is in doubt — especially in terminal state handling.
 - **Empirical Validation:** Code that has not been executed is assumed broken. For tmux behavior, validate with a built `tmux` binary, targeted shell/control-mode sessions, and focused regressions rather than relying only on inspection.
 - **Root Cause Proof:** Never claim a bug is fixed without identifying the exact root cause. If a change merely makes behavior disappear, treat that as unresolved until the controlling mechanism is isolated.
 - **Honesty Over Agreement:** Report the actual technical state. If a requested direction conflicts with tmux invariants or Whisp's integration model, say so clearly and propose a safer path.
@@ -10,12 +10,40 @@
 
 ## Commit and Branch Policy
 
-- Do not commit or push until builds/checks pass and the user explicitly approves.
-- For behavior changes, passing builds is not enough: reproduce or exercise the changed behavior with a targeted runtime validation before committing. If validation cannot be done from the agent environment, ask for explicit approval before any checkpoint commit.
-- For substantial work, use a feature branch.
-- Keep unrelated local files out of commits. This worktree may contain agent-local files such as `.claude/`, `.gemini/`, `CLAUDE.md`, `TMUX.md`, and scripts; do not clean up or revert files unrelated to the task.
+Autonomy ladder — each rung has its own gate:
+
+1. **Feature-branch commits — autonomous.** Commit early and often once the
+   change builds and its targeted regressions pass. Checkpoint commits of
+   unverified work are fine; flag them in the message
+   (`[unverified: needs live X]`). Keep unrelated local files out of commits:
+   this checkout may contain agent-local files such as `.claude/`, `.gemini/`,
+   and helper scripts — stage explicitly, never sweep with `git add -A`, and
+   do not clean up or revert files unrelated to the task.
+2. **Merge to the fork integration branch (currently `whisp-3.7b`) —
+   autonomous when gated.** Gates: a clean build
+   (`sh autogen.sh && ./configure && make`), the targeted `regress/` scripts
+   for the touched area, and a live exercise of the changed behavior against a
+   private-socket server (`./tmux -Ltest -f/dev/null`). Behavior only
+   verifiable inside Whisp is recorded as owed validation, not a merge
+   blocker.
+3. **Push / tag / upstream merges — ask first.** `origin` is what Whisp
+   releases pin, so pushing publishes for the next pin. Upstream refreshes
+   follow `WHISP_UPSTREAM.md` (ship our changes atop upstream's tagged
+   release); release tagging (`whisp-mac-<ver>-<build>-<channel>`) rides the
+   Whisp release process.
+
 - Remotes should be: `origin` as `git@github.com:lehenbauer/tmux.git` and `upstream` as `https://github.com/tmux/tmux.git`.
-- For periodic upstream refreshes, follow `WHISP_UPSTREAM.md`.
+
+## Validation Is Proportional
+
+Match validation to the diff's power to change behavior. Comment and man-page
+wording changes need a build at most, not a regress sweep. A localized
+behavior change needs its targeted `regress/` script plus one live
+private-socket exercise. Grid, screen-write, reflow, capture, or control-mode
+changes get the full relevant regress set plus the Whisp integration checks
+below — those paths are load-bearing for every Whisp client. Judge eligibility
+by the shape of the diff, not by confidence: a one-line change to a format, a
+notification, or command syntax is behavior, never "small".
 
 ## Build and Validation
 
@@ -30,6 +58,7 @@
   - `cd regress && make` for the full shell regression set when the local make supports this BSD-style Makefile.
 - For control-mode or pane-output changes, always exercise a real tmux server with a private socket name, for example `./tmux -Ltest -f/dev/null ...`, and kill the test server afterward.
 - For scrollback/grid changes, include runtime checks for wrap, explicit linefeed, clear/reset, resize/reflow, alternate screen, and pane isolation when those paths are in scope.
+- Grid consistency asserts (`grid_check_*`) are gated behind `TMUX_GRID_DEBUG` (fork commit `72d0982d`): they are O((history+screen)²) per scrolled linefeed and `assert()`-abort the whole server on failure, so customer builds must never ship them enabled. Never let an upstream merge silently restore always-on `#ifdef __APPLE__` gating; re-enable deliberately with `make CPPFLAGS='-DTMUX_GRID_DEBUG'` when hunting grid corruption.
 
 ## tmux Architecture Notes
 
@@ -67,36 +96,34 @@ Current Whisp model:
 - Pane input is sent with `send-keys -H -t <pane>`.
 - Whisp assumes notifications do not appear inside `%begin/%end/%error` response blocks and that `%output` data remains octal-escaped as documented.
 
-Do not break existing `%output`, `capture-pane`, target syntax, client sizing, or attached-control-client semantics. New line identity features should be additive and opt-in unless the user explicitly decides otherwise.
+Do not break existing `%output`, `capture-pane`, target syntax, client sizing, or attached-control-client semantics. Fork extensions are additive and opt-in unless the user explicitly decides otherwise.
 
-## Current Mission: Immutable Pane-Local Line Numbers
+The fork advertises its compatibility surface through
+`#{whisp_tmux_protocol_version}`; bump it whenever the control-mode or format
+surface Whisp depends on changes, and update Whisp's paired compatibility gate
+in the same change set.
 
-The first planned tmux change is to add an immutable line number to each line of terminal text received, distinct per terminal pane/PTY.
+## Line Identity (shipped)
 
-Constraints:
+Pane-local immutable line IDs are implemented and load-bearing: Whisp
+scrollback hydration anchors on them (`whisp-capture-pane`, the line-id
+capture/format paths). When touching grid, screen-write, or reflow code,
+preserve these invariants:
 
-- Do not redefine `hsize`, visible row coordinates, copy-mode coordinates, or `capture-pane -S/-E` semantics. The newest visible line may remain coordinate `0` in existing APIs.
-- Line numbers must be per `struct window_pane`, not global across the server and not shared across panes.
-- Preserve existing behavior for normal tmux users unless a new command, format, or control-mode extension explicitly exposes the new IDs.
-- Treat `wp->base` as the primary terminal screen. Status screens, mode screens, and callback-only screens should not silently consume pane line numbers.
-- Decide and document semantics for initial blank visible lines, CR overwrites, wrapped lines, alternate screen, clear/reset, history trimming, resize/reflow, and panes created from non-PTY input before coding.
-
-Likely implementation shape to investigate:
-
-- Add a monotonically increasing counter to `struct window_pane`, for example `next_line_number`, because pane identity owns the sequence.
-- Add a line ID field to `struct grid_line` so identity moves with the line when grid lines are copied or moved into history.
-- Assign IDs only through pane-aware paths or explicit helper calls. Avoid hiding pane-specific numbering inside generic grid helpers unless ownership is passed in deliberately.
-- Audit `screen_write_start_pane`, `screen_write_linefeed`, `screen_write_scrollup`, `screen_write_cell`, `screen_write_clear*`, `screen_write_reset`, `grid_scroll_history`, `grid_scroll_history_region`, `grid_empty_line`, `grid_clear_lines`, `grid_move_lines`, `screen_resize_y`, `screen_reflow`, `grid_reflow`, `screen_alternate_on`, and `screen_alternate_off`.
-- Expose IDs later through a dedicated format, capture option, or new command path rather than changing existing `capture-pane -p` text output.
-
-Minimum future validation for line numbering:
-
-- Two panes receive output; each pane gets an independent monotonic sequence.
-- Lines retain IDs after scrollback movement and history trimming.
-- Wrapping, explicit LF, CR overwrite, and clear/reset produce documented ID behavior.
-- Resize/reflow preserves or remaps IDs according to documented semantics.
-- Alternate-screen applications do not corrupt the normal-screen sequence.
-- Existing `capture-pane`, copy mode, and control-mode `%output` behavior remain compatible.
+- IDs are per `struct window_pane`, monotonic, never global and never shared
+  across panes; identity lives on `struct grid_line` and moves with the line
+  into history.
+- `hsize`, visible row coordinates, copy-mode coordinates, and
+  `capture-pane -S/-E` semantics are unchanged; line identity is exposed only
+  through the dedicated capture/format paths, never by altering existing
+  `capture-pane -p` output.
+- `wp->base` is the primary terminal screen; status screens, mode screens, and
+  callback-only screens do not consume pane line numbers.
+- Regression sweep when these paths change: two panes get independent
+  monotonic sequences; IDs survive scrollback movement and history trimming;
+  wrap, explicit LF, CR overwrite, clear/reset, resize/reflow, and alternate
+  screen behave as documented; existing `capture-pane`, copy mode, and
+  `%output` remain compatible.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
