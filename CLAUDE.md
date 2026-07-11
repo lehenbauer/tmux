@@ -1,3 +1,5 @@
+Read `AGENTS.md` first and treat it as the primary source of repository-specific instructions — engineering mandates, build/validation, commit policy, and the Whisp integration constraints. This is the Whisp fork of tmux; upstream-merge doctrine lives in `WHISP_UPSTREAM.md`.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
