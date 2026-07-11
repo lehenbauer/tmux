@@ -350,8 +350,10 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		wp->flags |= PANE_STATUSDRAWN;
 
 		gettimeofday(&wp->dead_time, NULL);
-		if (notify)
+		if (notify) {
 			notify_pane("pane-died", wp);
+			control_notify_whisp_pane_died(wp);
+		}
 
 		s = options_get_string(wp->options, "remain-on-exit-format");
 		if (*s != '\0') {
