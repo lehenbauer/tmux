@@ -58,6 +58,21 @@ git merge-tree --write-tree --messages master upstream/master
 free forecast. If it reports conflicts, inspect those paths before starting the
 real merge.
 
+## Post-Merge Smoke Tests
+
+After the whisp patch series lands on a new release branch, smoke the layout
+engine with the pane planner's randomized self-test against the fresh binary
+(scripts/whisp-pane-planner.py is a standalone snapshot; the canonical copy
+ships in ai-whisperer mirror-backend):
+
+```sh
+python3 scripts/whisp-pane-planner.py --tmux ./tmux fuzz --ops 400
+```
+
+It asserts planned-vs-observed pane geometry exactly after every operation, so
+upstream changes to layout.c, layout-custom.c, resize.c, or the pane resize
+queue surface immediately.
+
 After merging, inspect the resulting branch:
 
 ```sh
