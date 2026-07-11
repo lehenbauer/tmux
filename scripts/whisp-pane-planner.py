@@ -43,6 +43,8 @@ Prototype for whisp; lives in the tmux fork's scripts/ for now.
 
 import argparse
 import contextlib
+import fcntl
+import hashlib
 import io
 import os
 import random
@@ -66,15 +68,19 @@ class PlanError(RuntimeError):
 # ---------------------------------------------------------------- tmux plumbing
 
 class Tmux:
-    def __init__(self, binary="tmux", socket_name=None, no_user_config=False):
+    def __init__(self, binary="tmux", socket_name=None, socket_path=None,
+                 no_user_config=False):
         self.binary = binary
         self.socket_name = socket_name
+        self.socket_path = socket_path
         self.no_user_config = no_user_config
 
     def _argv(self):
         argv = [self.binary]
         if self.socket_name:
             argv += ["-L", self.socket_name]
+        if self.socket_path:
+            argv += ["-S", self.socket_path]
         if self.no_user_config:
             argv += ["-f", "/dev/null"]
         return argv
@@ -135,6 +141,25 @@ def resolve_pane(t, spec):
     out = t.run("display-message", "-p", "-t", spec,
                 "#{pane_id} #{window_id}").split()
     return out[0], out[1]
+
+
+@contextlib.contextmanager
+def server_lock(t):
+    """Serialize planner mutations per tmux server. Concurrent pane-died
+    hooks (two agents exiting at once) would otherwise interleave phase 1
+    and phase 2 and force both snaps to degrade; under remain-on-exit the
+    later death just waits here and plans from fresh state. flock is
+    released by the OS even if we crash."""
+    key = t.socket_path or t.socket_name \
+        or os.environ.get("TMUX", "").split(",")[0] or "default"
+    path = "/tmp/whisp-pane-planner-%s.lock" \
+        % hashlib.sha1(key.encode()).hexdigest()[:12]
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 # ---------------------------------------------------------------- layout strings
@@ -560,6 +585,11 @@ def _snap_and_verify(t, window, plan, did_what):
 
 
 def do_split(t, args):
+    with server_lock(t):
+        return _do_split(t, args)
+
+
+def _do_split(t, args):
     pane, window = resolve_pane(t, args.target)
     state = read_state(t, window)
     size = args.size if args.size is not None \
@@ -611,6 +641,11 @@ def do_split(t, args):
 
 
 def do_close(t, args):
+    with server_lock(t):
+        return _do_close(t, args)
+
+
+def _do_close(t, args):
     pane, window = resolve_pane(t, args.target)
     state = read_state(t, window)
 
@@ -833,6 +868,8 @@ def main():
     ap.add_argument("--tmux", default="tmux", help="tmux binary to use")
     ap.add_argument("-L", dest="socket", default=None,
                     help="tmux socket name (default: $TMUX)")
+    ap.add_argument("-S", dest="socket_path", default=None,
+                    help="tmux socket path (useful in hooks: -S '#{socket_path}')")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     default_pane = os.environ.get("TMUX_PANE", "")
@@ -864,7 +901,7 @@ def main():
                     help="leave the fuzz server running")
 
     args = ap.parse_args()
-    t = Tmux(args.tmux, args.socket)
+    t = Tmux(args.tmux, args.socket, args.socket_path)
 
     try:
         if args.cmd == "split":
