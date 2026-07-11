@@ -38,7 +38,9 @@ Example daily-driver bindings (~/.tmux.conf):
   bind %   run-shell "whisp-pane-planner.py split h -t '#{pane_id}'"
   bind x   run-shell "whisp-pane-planner.py close -t '#{pane_id}'"
 
-Prototype for whisp; lives in the tmux fork's scripts/ for now.
+Standalone snapshot kept in the tmux fork for rebase smoke-testing
+(see WHISP_UPSTREAM.md). The canonical copy ships with whisp:
+ai-whisperer/mirror-backend/whisp_pane_planner.py — fix bugs there first.
 """
 
 import argparse
