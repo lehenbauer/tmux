@@ -37,6 +37,10 @@ user explicitly decides to change them:
 - `whisp-capture-pane`
 - `whisp-search-history`
 - Whisp control-mode and `%output` compatibility
+- `%whisp-shell-event` and `%whisp-pane-died` control notifications
+  (`%whisp-pane-died` is broadcast to ALL control clients, deliberately not
+  session-filtered: a pane dying under remain-on-exit changes no layout, so
+  it is the only signal a lifecycle manager gets for unobserved sessions)
 - immutable pane-local line numbering and Whisp activity formats
 
 Accept upstream changes where they do not weaken those surfaces. If upstream

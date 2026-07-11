@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 4
+#define WHISP_TMUX_PROTOCOL_VERSION 5
 
 extern char   **environ;
 
@@ -3708,6 +3708,7 @@ void	control_notify_session_window_changed(struct session *);
 void	control_notify_paste_buffer_changed(const char *);
 void	control_notify_paste_buffer_deleted(const char *);
 void	control_notify_whisp_shell_event(struct window_pane *);
+void	control_notify_whisp_pane_died(struct window_pane *);
 
 /* session.c */
 extern struct sessions sessions;

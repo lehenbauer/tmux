@@ -275,3 +275,23 @@ control_notify_whisp_shell_event(struct window_pane *wp)
 		    (unsigned long long)wp->whisp_shell_seq);
 	}
 }
+
+/*
+ * Sent to every control client, not just those whose session contains the
+ * window: a pane dying under remain-on-exit changes no layout, so this is
+ * the only signal a lifecycle manager gets, including for sessions it is
+ * not attached to.
+ */
+void
+control_notify_whisp_pane_died(struct window_pane *wp)
+{
+	struct client	*c;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (!CONTROL_SHOULD_NOTIFY_CLIENT(c))
+			continue;
+
+		control_write(c, "%%whisp-pane-died %%%u @%u", wp->id,
+		    wp->window->id);
+	}
+}
