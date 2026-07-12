@@ -45,6 +45,16 @@ below — those paths are load-bearing for every Whisp client. Judge eligibility
 by the shape of the diff, not by confidence: a one-line change to a format, a
 notification, or command syntax is behavior, never "small".
 
+## Session memory
+
+This fork keeps no local `docs/agent_memory/`; durable memory for tmux-fork
+work lives in the Whisp repo. Before changing fork behavior, grep
+`../ai-whisperer/docs/agent_memory/decisions.md` for the relevant topics
+("Tmux runtime & protocol" and neighbors) — it is a grep-by-topic reference,
+not a start-of-session read. Record fork decisions and upstream-merge notes
+there (per `WHISP_UPSTREAM.md`): decisions as one dated ≤2-sentence bullet,
+long-form records as a dated file under its `handoffs/`.
+
 ## Build and Validation
 
 - Normal build from a clean checkout is:
