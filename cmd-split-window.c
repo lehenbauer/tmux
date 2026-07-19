@@ -69,6 +69,97 @@ const struct cmd_entry cmd_split_window_entry = {
 	.exec = cmd_split_window_exec
 };
 
+/*
+ * Grow a window and add a full-size pane without exposing the temporary grown
+ * layout to the existing pane PTYs. This is the atomic primitive used by
+ * Whisp's minimal-disturbance pane lifecycle.
+ */
+const struct cmd_entry cmd_whisp_split_window_entry = {
+	.name = "whisp-split-window",
+
+	.args = { "bc:de:EfF:hkl:m:PR:s:S:t:vx:y:", 0, -1, NULL },
+	.usage = "[-bdehPv] [-c start-directory] [-e environment] "
+		 "[-F format] -f -l size [-m message] "
+		 "[-s style] [-S active-border-style] "
+		 "[-R inactive-border-style] -x width -y height "
+		 CMD_TARGET_PANE_USAGE " [shell-command [argument ...]]",
+
+	.target = { 't', CMD_FIND_PANE, 0 },
+
+	.flags = 0,
+	.exec = cmd_split_window_exec
+};
+
+static int
+cmd_split_window_prepare_atomic(struct cmdq_item *item, struct args *args,
+    struct window *w, struct window_pane *wp, u_int *sx, u_int *sy,
+    u_int *new_size)
+{
+	const char	*errstr;
+	char		*cause = NULL;
+	u_int		 size;
+
+	if (!args_has(args, 'f') || !args_has(args, 'l') ||
+	    !args_has(args, 'x') || !args_has(args, 'y')) {
+		cmdq_error(item, "-f, -l, -x and -y are required");
+		return (-1);
+	}
+	if (args_has(args, 'h') == args_has(args, 'v')) {
+		cmdq_error(item, "exactly one of -h or -v is required");
+		return (-1);
+	}
+	if (w->flags & WINDOW_ZOOMED) {
+		cmdq_error(item, "can't atomically split a zoomed window");
+		return (-1);
+	}
+	if (window_pane_is_floating(wp)) {
+		cmdq_error(item, "can't split a floating pane");
+		return (-1);
+	}
+
+	*sx = args_strtonum(args, 'x', WINDOW_MINIMUM, WINDOW_MAXIMUM, &cause);
+	if (cause != NULL) {
+		cmdq_error(item, "width %s", cause);
+		free(cause);
+		return (-1);
+	}
+	*sy = args_strtonum(args, 'y', WINDOW_MINIMUM, WINDOW_MAXIMUM, &cause);
+	if (cause != NULL) {
+		cmdq_error(item, "height %s", cause);
+		free(cause);
+		return (-1);
+	}
+	size = strtonum(args_get(args, 'l'), 1, WINDOW_MAXIMUM, &errstr);
+	if (errstr != NULL) {
+		cmdq_error(item, "size %s", errstr);
+		return (-1);
+	}
+
+	if (args_has(args, 'h')) {
+		if (wp->yoff != 0 || wp->sy != w->sy) {
+			cmdq_error(item, "target pane does not span the window height");
+			return (-1);
+		}
+		if (*sy != w->sy || *sx != w->sx + size + 1) {
+			cmdq_error(item, "horizontal split geometry must preserve "
+			    "existing space");
+			return (-1);
+		}
+	} else {
+		if (wp->xoff != 0 || wp->sx != w->sx) {
+			cmdq_error(item, "target pane does not span the window width");
+			return (-1);
+		}
+		if (*sx != w->sx || *sy != w->sy + size + 1) {
+			cmdq_error(item, "vertical split geometry must preserve "
+			    "existing space");
+			return (-1);
+		}
+	}
+	*new_size = size;
+	return (0);
+}
+
 static enum cmd_retval
 cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -88,6 +179,11 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	char			*cause = NULL, *cp;
 	struct args_value	*av;
 	u_int			 count = args_count(args);
+	u_int			 atomic_sx = 0, atomic_sy = 0, atomic_size = 0;
+	enum layout_type	 atomic_type;
+	int			 atomic;
+
+	atomic = (cmd_get_entry(self) == &cmd_whisp_split_window_entry);
 
 	if (cmd_get_entry(self) == &cmd_new_pane_entry)
 		is_floating = !args_has(args, 'L');
@@ -114,10 +210,34 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	if (empty)
 		flags |= SPAWN_EMPTY;
 
-	if (is_floating)
-		lc = layout_get_floating_cell(item, args, w, wp, &cause);
-	else
-		lc = layout_get_tiled_cell(item, args, w, wp, flags, &cause);
+	if (atomic && cmd_split_window_prepare_atomic(item, args, w, wp,
+	    &atomic_sx, &atomic_sy, &atomic_size) != 0)
+		return (CMD_RETURN_ERROR);
+	if (atomic) {
+		options_set_number(w->options, "window-size", WINDOW_SIZE_MANUAL);
+		w->manual_sx = atomic_sx;
+		w->manual_sy = atomic_sy;
+		window_resize(w, atomic_sx, atomic_sy, -1, -1);
+		w->flags &= ~WINDOW_RESIZE;
+		if (args_has(args, 'h'))
+			atomic_type = LAYOUT_LEFTRIGHT;
+		else
+			atomic_type = LAYOUT_TOPBOTTOM;
+		lc = layout_add_fullsize_pane(w, atomic_type, atomic_size,
+		    flags);
+		if (lc == NULL) {
+			cmdq_error(item, "atomic split geometry changed unexpectedly");
+			return (CMD_RETURN_ERROR);
+		}
+	}
+
+	if (!atomic) {
+		if (is_floating)
+			lc = layout_get_floating_cell(item, args, w, wp, &cause);
+		else
+			lc = layout_get_tiled_cell(item, args, w, wp, flags,
+			    &cause);
+	}
 	if (cause != NULL) {
 		cmdq_error(item, "size or position %s", cause);
 		free(cause);
@@ -222,6 +342,11 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		server_redraw_window(wp->window);
 	}
 	server_redraw_session(s);
+	if (atomic) {
+		tty_update_window_offset(w);
+		notify_window("window-layout-changed", w);
+		notify_window("window-resized", w);
+	}
 
 	if (args_has(args, 'P')) {
 		if ((template = args_get(args, 'F')) == NULL)

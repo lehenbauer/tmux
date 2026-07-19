@@ -3908,6 +3908,37 @@ Shares behavior with
 See
 .Ic new\-pane
 for more details.
+.Tg whisp-split-window
+.It Xo Ic whisp\-split\-window
+.Op Fl bdehPv
+.Op Fl c Ar start\-directory
+.Op Fl e Ar environment
+.Op Fl F Ar format
+.Fl f
+.Fl l Ar size
+.Op Fl m Ar message
+.Op Fl R Ar inactive\-border\-style
+.Op Fl s Ar style
+.Op Fl S Ar active\-border\-style
+.Op Fl t Ar target\-pane
+.Fl x Ar width
+.Fl y Ar height
+.Op Ar shell\-command Op Ar argument ...
+.Xc
+Atomically grows the window and adds a full-size pane without applying a
+temporary grown layout to existing pane PTYs.
+Exactly one of
+.Fl h
+or
+.Fl v
+must be supplied, and
+.Ar width ,
+.Ar height
+and
+.Ar size
+must describe a final geometry that preserves the existing layout.
+This command is part of the Whisp fork protocol and is intended for the Whisp
+pane lifecycle, which follows it with the exact final layout.
 .Tg swapp
 .It Xo Ic swap\-pane
 .Op Fl dDUZ

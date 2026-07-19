@@ -36,6 +36,7 @@ user explicitly decides to change them:
 - `#{whisp_tmux_protocol_version}`
 - `whisp-capture-pane`
 - `whisp-search-history`
+- `whisp-split-window` atomic grow-and-split geometry
 - Whisp control-mode and `%output` compatibility
 - `%whisp-shell-event` and `%whisp-pane-died` control notifications
   (`%whisp-pane-died` is broadcast to ALL control clients, deliberately not
@@ -103,6 +104,7 @@ Run focused regressions:
 ```sh
 TEST_TMUX=$PWD/tmux sh regress/capture-pane-line-numbers.sh
 TEST_TMUX=$PWD/tmux sh regress/search-history.sh
+TEST_TMUX=$PWD/tmux sh regress/whisp-split-window.sh
 TEST_TMUX=$PWD/tmux sh regress/capture-pane-hyperlink.sh
 TEST_TMUX=$PWD/tmux sh regress/decrqm-sync.sh
 TEST_TMUX=$PWD/tmux sh regress/control-client-sanity.sh
@@ -114,6 +116,8 @@ Also run a private-socket smoke test that verifies:
 - `capture-pane -p -L` still returns upstream line-numbered output.
 - `whisp-capture-pane -L` returns immutable Whisp line IDs.
 - `whisp-search-history` finds retained pane content and reports line IDs.
+- `whisp-split-window` preserves existing pane PTY sizes while growing the
+  window and adding a full-size pane.
 - a basic control-mode attach still emits escaped `%output`.
 
 Always kill the private test server when the probe exits.
