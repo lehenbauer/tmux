@@ -3450,6 +3450,7 @@ void		 winlink_stack_push(struct winlink_stack *, struct winlink *);
 void		 winlink_stack_remove(struct winlink_stack *, struct winlink *);
 struct window	*window_find_by_id_str(const char *);
 struct window	*window_find_by_id(u_int);
+void		 window_seed_ids(void);
 void		 window_update_activity(struct window *);
 void		 window_pane_update_activity(struct window_pane *, size_t);
 void		 window_pane_update_input(struct window_pane *, size_t);
