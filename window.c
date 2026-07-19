@@ -61,6 +61,8 @@ static u_int	next_window_pane_id;
 static u_int	next_window_id;
 static u_int	next_active_point;
 
+#define WHISP_TMUX_ID_BASE_MAX 4000000000LL
+
 struct window_pane_input_data {
 	struct cmdq_item	*item;
 	u_int			 wp;
@@ -76,6 +78,22 @@ static void	window_pane_full_size_offset(struct window_pane *wp,
 RB_GENERATE(windows, window, entry, window_cmp);
 RB_GENERATE(winlinks, winlink, entry, winlink_cmp);
 RB_GENERATE(window_pane_tree, window_pane, tree_entry, window_pane_cmp);
+
+void
+window_seed_ids(void)
+{
+	const char	*value, *errstr;
+	long long	 base;
+
+	value = getenv("WHISP_TMUX_ID_BASE");
+	if (value == NULL || *value == '\0')
+		return;
+	base = strtonum(value, 0, WHISP_TMUX_ID_BASE_MAX, &errstr);
+	if (errstr != NULL)
+		return;
+	next_window_pane_id = (u_int)base;
+	next_window_id = (u_int)base;
+}
 
 int
 window_cmp(struct window *w1, struct window *w2)
