@@ -835,6 +835,48 @@ layout_assign_pane(struct layout_cell *lc, struct window_pane *wp,
 		layout_fix_panes(wp->window, NULL);
 }
 
+/*
+ * Add a full-size pane beside an existing layout after the window has grown.
+ * The old root is wrapped without changing any of its cell sizes, so assigning
+ * the new pane cannot expose a temporary geometry to existing pane PTYs.
+ */
+struct layout_cell *
+layout_add_fullsize_pane(struct window *w, enum layout_type type, u_int size,
+    int flags)
+{
+	struct layout_cell	*lc = w->layout_root, *lcnew, *lcparent;
+
+	if (type == LAYOUT_LEFTRIGHT) {
+		if (lc->sx + size + 1 != w->sx || lc->sy != w->sy)
+			return (NULL);
+	} else if (type == LAYOUT_TOPBOTTOM) {
+		if (lc->sx != w->sx || lc->sy + size + 1 != w->sy)
+			return (NULL);
+	} else
+		fatalx("bad layout type");
+
+	lcparent = layout_create_cell(NULL);
+	layout_make_node(lcparent, type);
+	layout_set_size(lcparent, w->sx, w->sy, 0, 0);
+	w->layout_root = lcparent;
+
+	lc->parent = lcparent;
+	lcnew = layout_create_cell(lcparent);
+	if (flags & SPAWN_BEFORE) {
+		TAILQ_INSERT_HEAD(&lcparent->cells, lcnew, entry);
+		TAILQ_INSERT_TAIL(&lcparent->cells, lc, entry);
+	} else {
+		TAILQ_INSERT_HEAD(&lcparent->cells, lc, entry);
+		TAILQ_INSERT_TAIL(&lcparent->cells, lcnew, entry);
+	}
+	if (type == LAYOUT_LEFTRIGHT)
+		layout_set_size(lcnew, size, w->sy, 0, 0);
+	else
+		layout_set_size(lcnew, w->sx, size, 0, 0);
+	layout_fix_offsets(w);
+	return (lcnew);
+}
+
 /* Calculate the new pane size for resized parent. */
 static u_int
 layout_new_pane_size(struct window *w, u_int previous, struct layout_cell *lc,

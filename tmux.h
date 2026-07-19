@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 5
+#define WHISP_TMUX_PROTOCOL_VERSION 6
 
 extern char   **environ;
 
@@ -3566,6 +3566,8 @@ void		 layout_resize_pane_to(struct window_pane *, enum layout_type,
 		     u_int);
 void		 layout_assign_pane(struct layout_cell *, struct window_pane *,
 		     int);
+struct layout_cell *layout_add_fullsize_pane(struct window *,
+		     enum layout_type, u_int, int);
 struct layout_cell *layout_split_pane(struct window_pane *, enum layout_type,
 		     int, int);
 struct layout_cell *layout_floating_pane(struct window *, u_int, u_int, int,
