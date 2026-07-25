@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 6
+#define WHISP_TMUX_PROTOCOL_VERSION 7
 
 extern char   **environ;
 
@@ -1518,6 +1518,14 @@ struct layout_cell {
 	struct layout_cells cells;
 
 	TAILQ_ENTRY(layout_cell) entry;
+};
+
+/* Detached, pane-ID-bearing layout parsed for Whisp atomic pane close. */
+struct whisp_layout_parse_result {
+	struct layout_cell	*root;
+	struct layout_cell	**leaves;
+	u_int			*pane_ids;
+	u_int			 nleaves;
 };
 
 /* Environment variable. */
@@ -3584,6 +3592,9 @@ struct layout_cell *layout_get_tiled_cell(struct cmdq_item *, struct args *,
 /* layout-custom.c */
 char		*layout_dump(struct window *, struct layout_cell *);
 int		 layout_parse(struct window *, const char *, char **);
+int		 whisp_layout_parse(const char *,
+		     struct whisp_layout_parse_result *, char **);
+void		 whisp_layout_parse_free(struct whisp_layout_parse_result *);
 
 /* layout-set.c */
 int		 layout_set_lookup(const char *);
