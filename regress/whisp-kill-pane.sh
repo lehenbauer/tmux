@@ -175,6 +175,38 @@ $bottom:0,14:120x27
 $right:121,0:120x41" || exit 1
 echo "PASS divergent-absorb untouched=$top,$right SIGWINCH=0 absorber=$bottom SIGWINCH=1"
 
+# z-index drain, with teeth. The survivors' serialized leaf order must differ
+# from their existing w->z_index order, otherwise re-inserting already-linked
+# nodes is a self-healing no-op and a build with the drain removed still passes.
+# `split-window -b` puts the new pane geometrically first while the older pane
+# keeps its earlier z_index position. Assert BEFORE any second mutation: a later
+# split rebuilds the queue and would hide the damage.
+reset_server
+tmux -f/dev/null new -d -x120 -y24 'sleep 30' || exit 1
+SERVER_CREATED=1
+older=$(tmux display-message -p '#{pane_id}') || exit 1
+leftmost=$(tmux split-window -d -P -F '#{pane_id}' -b -h -l40 -t"$older" \
+    'sleep 30') || exit 1
+victim=$(tmux split-window -d -P -F '#{pane_id}' -v -l10 -t"$older" \
+    'sleep 30') || exit 1
+test "$(tmux display-message -p -t"$leftmost" '#{pane_left}')" -eq 0 || exit 1
+test "$(tmux display-message -p -t"$older" '#{pane_left}')" -eq 41 || exit 1
+body="120x24,0,0{40x24,0,0,${leftmost#%},79x24,41,0,${older#%}}"
+final_layout=$(layout "$body") || exit 1
+tmux whisp-kill-pane -t"$victim" "$final_layout" || exit 1
+test "$(tmux display-message -p '#{window_layout}')" = "$final_layout" ||
+	exit 1
+# Every survivor must still be reachable on w->z_index. window_pane_zindex only
+# walks that queue, so a pane dropped from it formats as empty.
+tmux list-panes -F '#{pane_id}:#{pane_z}' >"$OUT" || exit 1
+test "$(wc -l <"$OUT" | tr -d ' ')" -eq 2 || exit 1
+if grep -Ev '^%[0-9]+:1$' "$OUT" >/dev/null; then
+	echo "FAIL: survivor missing or duplicated on z_index after close" >&2
+	cat "$OUT" >&2
+	exit 1
+fi
+echo "PASS zindex-drain leaf-order=$leftmost,$older z=1,1"
+
 # Refusals: each command must fail without changing layout, pane order,
 # geometry, z-index, zoom state, or floating state.
 reset_server
