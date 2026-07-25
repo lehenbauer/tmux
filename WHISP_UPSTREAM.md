@@ -37,6 +37,7 @@ user explicitly decides to change them:
 - `whisp-capture-pane`
 - `whisp-search-history`
 - `whisp-split-window` atomic grow-and-split geometry
+- `whisp-kill-pane` atomic close-and-final-layout geometry
 - Whisp control-mode and `%output` compatibility
 - `%whisp-shell-event` and `%whisp-pane-died` control notifications
   (`%whisp-pane-died` is broadcast to ALL control clients, deliberately not
@@ -118,6 +119,8 @@ Also run a private-socket smoke test that verifies:
 - `whisp-search-history` finds retained pane content and reports line IDs.
 - `whisp-split-window` preserves existing pane PTY sizes while growing the
   window and adding a full-size pane.
+- `whisp-kill-pane` removes a pane and installs the final layout without
+  resizing unchanged survivor PTYs through an intermediate geometry.
 - a basic control-mode attach still emits escaped `%output`.
 
 Always kill the private test server when the probe exits.
