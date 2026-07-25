@@ -3939,6 +3939,25 @@ and
 must describe a final geometry that preserves the existing layout.
 This command is part of the Whisp fork protocol and is intended for the Whisp
 pane lifecycle, which follows it with the exact final layout.
+.Tg whisp-kill-pane
+.It Xo Ic whisp\-kill\-pane
+.Op Fl t Ar target\-pane
+.Ar layout
+.Xc
+Atomically removes
+.Ar target\-pane
+and installs the checksummed final
+.Ar layout
+without applying an intermediate close-and-redistribute geometry to surviving
+pane PTYs.
+The layout must contain each surviving pane ID exactly once and must not contain
+the target pane ID.
+The command refuses zoomed windows, windows with floating panes, and the last
+pane in a window without changing the window.
+It fires the
+.Ic after\-kill\-pane
+hook once after the final layout is installed.
+This command is part of Whisp fork protocol 7.
 .Tg swapp
 .It Xo Ic swap\-pane
 .Op Fl dDUZ
