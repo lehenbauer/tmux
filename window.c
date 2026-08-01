@@ -1249,9 +1249,17 @@ window_pane_resize(struct window_pane *wp, u_int sx, u_int sy)
 {
 	struct window_mode_entry	*wme;
 	struct window_pane_resize	*r;
+	struct winsize			 ws;
 
-	if (sx == wp->sx && sy == wp->sy)
+	if (sx == wp->sx && sy == wp->sy) {
+		if (wp->fd == -1 || !TAILQ_EMPTY(&wp->resize_queue))
+			return;
+		/* Heal external TIOCSWINSZ drift on the next same-size request. */
+		if (ioctl(wp->fd, TIOCGWINSZ, &ws) != -1 &&
+		    (ws.ws_col != sx || ws.ws_row != sy))
+			window_pane_send_resize(wp, sx, sy);
 		return;
+	}
 
 	screen_write_stop_sync(wp);
 
