@@ -1254,7 +1254,12 @@ window_pane_resize(struct window_pane *wp, u_int sx, u_int sy)
 	if (sx == wp->sx && sy == wp->sy) {
 		if (wp->fd == -1 || !TAILQ_EMPTY(&wp->resize_queue))
 			return;
-		/* Heal external TIOCSWINSZ drift on the next same-size request. */
+		/*
+		 * Heal external TIOCSWINSZ drift on the next same-size
+		 * request: the pane grid is authoritative for the pty, so
+		 * in-pane stty/ioctl winsize overrides are deliberately
+		 * reverted rather than preserved.
+		 */
 		if (ioctl(wp->fd, TIOCGWINSZ, &ws) != -1 &&
 		    (ws.ws_col != sx || ws.ws_row != sy))
 			window_pane_send_resize(wp, sx, sy);

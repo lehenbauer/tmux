@@ -23,7 +23,7 @@ cleanup()
 	rm -f "$WORK"/*
 	rmdir "$WORK"
 }
-trap cleanup 0 1 15
+trap cleanup 0 1 2 15
 
 tmux()
 {
