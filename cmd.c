@@ -121,6 +121,7 @@ extern const struct cmd_entry cmd_unlink_window_entry;
 extern const struct cmd_entry cmd_wait_for_entry;
 extern const struct cmd_entry cmd_whisp_capture_pane_entry;
 extern const struct cmd_entry cmd_whisp_kill_pane_entry;
+extern const struct cmd_entry cmd_whisp_reset_pane_entry;
 extern const struct cmd_entry cmd_whisp_split_window_entry;
 
 const struct cmd_entry *cmd_table[] = {
@@ -218,6 +219,7 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_wait_for_entry,
 	&cmd_whisp_capture_pane_entry,
 	&cmd_whisp_kill_pane_entry,
+	&cmd_whisp_reset_pane_entry,
 	&cmd_whisp_split_window_entry,
 	NULL
 };

@@ -3939,6 +3939,27 @@ and
 must describe a final geometry that preserves the existing layout.
 This command is part of the Whisp fork protocol and is intended for the Whisp
 pane lifecycle, which follows it with the exact final layout.
+.Tg whisp-reset-pane
+.It Xo Ic whisp\-reset\-pane
+.Op Fl H
+.Op Fl t Ar target\-pane
+.Xc
+Resets the server-side terminal state of
+.Ar target\-pane
+without writing to its pty or signalling its process.
+If the pane is in the alternate screen, it is exited and its contents are
+discarded.
+Any copy-mode or view-mode window modes are exited as well.
+The input parser, terminal modes, tabs, character sets, colour palette,
+synchronised output state, visible screen and cursor are reset to their
+defaults.
+The cursor is placed at the top left and the pane is marked for redraw.
+Soft reset never pushes rows into history, regardless of the
+.Ic scroll-on-clear
+option; existing history is preserved byte-for-byte unless
+.Fl H
+is given, in which case it is cleared as well.
+This command is part of the Whisp fork protocol 8.
 .Tg whisp-kill-pane
 .It Xo Ic whisp\-kill\-pane
 .Op Fl t Ar target\-pane

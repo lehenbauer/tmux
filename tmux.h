@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 7
+#define WHISP_TMUX_PROTOCOL_VERSION 8
 
 extern char   **environ;
 
