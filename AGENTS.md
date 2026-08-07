@@ -61,6 +61,12 @@ long-form records as a dated file under its `handoffs/`.
   - `sh autogen.sh`
   - `./configure`
   - `make`
+- Binaries destined for Whisp releases (ai-whisperer bundles `./tmux` from this
+  checkout) must configure with `--enable-utf8proc --enable-jemalloc`: macOS
+  26.x ARM libmalloc can return non-zeroed memory from calloc under pane-churn
+  workloads (tmux issue 5385, crashed stock 3.7b), and upstream 3.7c+ requires
+  an explicit jemalloc choice. Verify with
+  `MALLOC_CONF=stats_print:true ./tmux -V` (prints jemalloc stats when active).
 - Release tarballs may already have generated configure files, but this repo checkout may need `autogen.sh`.
 - Targeted regressions live in `regress/`. The scripts expect `TEST_TMUX` or default to `../tmux`; examples:
   - `TEST_TMUX=$PWD/tmux sh regress/control-client-sanity.sh`

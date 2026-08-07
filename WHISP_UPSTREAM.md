@@ -96,9 +96,13 @@ Build from the merged tree:
 
 ```sh
 sh autogen.sh
-./configure --enable-utf8proc
+./configure --enable-utf8proc --enable-jemalloc
 make
 ```
+
+jemalloc is required for release binaries on macOS (issue 5385 calloc
+corruption; 3.7c+ configure forces an explicit choice). Only drop to
+`--disable-jemalloc` for throwaway analysis builds on hosts without it.
 
 Run focused regressions:
 
