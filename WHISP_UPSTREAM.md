@@ -1,6 +1,6 @@
 # Whisp tmux Upstream Updates
 
-Whisp ships from a `whisp-<release>` branch (currently `whisp-3.7b`): the
+Whisp ships from a `whisp-<release>` branch (currently `whisp-3.7c`): the
 latest upstream **release tag** plus the Whisp patch series (protocol,
 capture, search, and telemetry changes). Do not base customer releases on
 upstream `master`-of-the-day: master carries in-flight debugging scaffolding

@@ -19,7 +19,7 @@ Autonomy ladder — each rung has its own gate:
    this checkout may contain agent-local files such as `.claude/`, `.gemini/`,
    and helper scripts — stage explicitly, never sweep with `git add -A`, and
    do not clean up or revert files unrelated to the task.
-2. **Merge to the fork integration branch (currently `whisp-3.7b`) —
+2. **Merge to the fork integration branch (currently `whisp-3.7c`) —
    autonomous when gated.** Gates: a clean build
    (`sh autogen.sh && ./configure && make`), the targeted `regress/` scripts
    for the touched area, and a live exercise of the changed behavior against a
