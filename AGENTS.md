@@ -10,7 +10,14 @@
 
 ## Commit and Branch Policy
 
-Autonomy ladder — each rung has its own gate:
+This policy assumes current frontier coding agents can complete scoped work
+end to end. Judge autonomy by reversibility, blast radius, and executed
+verification — not by model-era caution around routine Git operations. Do not
+pause for confirmation when the requested outcome is clear and the next action
+is a normal, recoverable part of delivering it.
+
+Autonomy ladder — execute through the highest applicable rung without waiting
+for another prompt:
 
 1. **Feature-branch commits — autonomous.** Commit early and often once the
    change builds and its targeted regressions pass. Checkpoint commits of
@@ -26,11 +33,29 @@ Autonomy ladder — each rung has its own gate:
    private-socket server (`./tmux -Ltest -f/dev/null`). Behavior only
    verifiable inside Whisp is recorded as owed validation, not a merge
    blocker.
-3. **Push / tag / upstream merges — ask first.** `origin` is what Whisp
-   releases pin, so pushing publishes for the next pin. Upstream refreshes
-   follow `WHISP_UPSTREAM.md` (ship our changes atop upstream's tagged
-   release); release tagging (`whisp-mac-<ver>-<build>-<channel>`) rides the
-   Whisp release process.
+3. **Fork branches and upstream intake — autonomous when gated.** Create,
+   replay, merge, or retire feature, integration, and `whisp-<release>`
+   branches as needed. Upstream refreshes follow `WHISP_UPSTREAM.md`: ship our
+   plain patch series atop an upstream release tag, preserve Whisp surfaces,
+   and run the proportional build, regression, and live-smoke gates before
+   landing.
+4. **Pushes to `origin` — autonomous when verified.** Push new or updated fork
+   branches promptly after their gates pass, set tracking refs, and confirm the
+   remote resolves to the accepted commit. If another contributor moved the
+   remote, integrate non-destructively, rerun affected gates, and then push.
+   Never force-push shared or published history merely to avoid integration.
+5. **Approval is reserved for outward publication or destructive history.**
+   Ask before creating or pushing release tags
+   (`whisp-mac-<ver>-<build>-<channel>`), publishing GitHub releases or Whisp
+   binaries, pushing anything to `upstream`, deleting protected/shared remote
+   branches, or rewriting published history. Deleting an accepted, merged
+   temporary branch is routine cleanup and remains autonomous.
+
+Do not stop at a local commit when the requested repository outcome also
+requires a gated merge or push to `origin`. Stop and ask only when intent is
+materially ambiguous, a conflict requires a product/compatibility decision,
+verification fails without a safe in-scope fix, or the next step crosses the
+publication/destructive boundary above.
 
 - Remotes should be: `origin` as `git@github.com:lehenbauer/tmux.git` and `upstream` as `https://github.com/tmux/tmux.git`.
 
