@@ -2743,7 +2743,7 @@ the end of the visible pane.
 The default is to capture only the visible contents of the pane.
 .Tg whisp-capture-pane
 .It Xo Ic whisp\-capture\-pane
-.Op Fl CeJLNqT
+.Op Fl CeJLNqRT
 .Oo Fl A Ar after\-line | Fl B Ar before\-line Oc
 .Op Fl E Ar end\-line
 .Fl n Ar lines
@@ -2801,6 +2801,25 @@ and
 .Fl N
 have the same meaning as for
 .Ic capture\-pane .
+.Pp
+Whisp protocol 9 adds replay mode,
+.Fl R ,
+which accepts only
+.Fl S ,
+.Fl E ,
+and
+.Fl t .
+The first line is
+.Ql whisp-replay-v1\et<hex-rendition> ;
+the remaining output matches joined ANSI capture
+.Ic capture\-pane Fl pJ Fl e .
+The hexadecimal bytes restore the pane parser's current SGR attributes
+(including foreground, background, underline colour and intensity).
+They are captured atomically with the screen,
+without writing to the pane. Hyperlinks, character set/shift state and
+incomplete escape sequences are not part of this rendition record.
+Replay clients must remove the metadata line, start the content at default
+SGR, and apply the rendition bytes after the content, before live output.
 .It Xo
 .Ic choose\-client
 .Op Fl hkNryZ

@@ -884,6 +884,14 @@ input_init(struct window_pane *wp, struct bufferevent *bev,
 	return (ictx);
 }
 
+/* Read the rendition for the next printed cell, not the last painted cell. */
+const struct grid_cell *
+input_current_cell(struct input_ctx *ictx)
+{
+
+	return (ictx == NULL ? &grid_default_cell : &ictx->cell.cell);
+}
+
 /* Destroy input parser. */
 void
 input_free(struct input_ctx *ictx)

@@ -116,8 +116,8 @@ $TMUX kill-pane -t"$LIVE" || exit 1
 echo 'PASS live-output reset server-alive'
 
 version=$($TMUX display-message -p '#{whisp_tmux_protocol_version}') || exit 1
-test "$version" = 8 || exit 1
-echo 'PASS protocol_version=8'
+test "$version" -ge 8 || exit 1
+echo "PASS protocol_version=$version (reset requires >=8)"
 
 $TMUX kill-server 2>/dev/null
 exit 0

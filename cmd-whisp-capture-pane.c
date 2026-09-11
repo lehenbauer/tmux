@@ -54,9 +54,10 @@ const struct cmd_entry cmd_whisp_capture_pane_entry = {
 	.name = "whisp-capture-pane",
 	.alias = NULL,
 
-	.args = { "A:B:CeE:JLNn:qS:Tt:", 0, 0, NULL },
+	.args = { "A:B:CeE:JLNn:qRS:Tt:", 0, 0, NULL },
 	.usage = "[-CeJNqT] [-A after-line | -B before-line] -n lines "
 		 "[-L [-CeNqT] [-E end-line] [-S start-line]] "
+		 "[-R [-E end-line] [-S start-line]] "
 		 CMD_TARGET_PANE_USAGE,
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -320,6 +321,45 @@ cmd_whisp_capture_pane_print(struct cmdq_item *item, char *buf, size_t len)
 	return (CMD_RETURN_NORMAL);
 }
 
+/*
+ * Replay capture: screen and active rendition are read in one command, with
+ * no pane input or event-loop yield between them. Hex keeps the metadata one
+ * printable line even when the rendition contains escape sequences.
+ */
+static char *
+cmd_whisp_capture_pane_replay(struct args *args, struct cmdq_item *item,
+    struct window_pane *wp, size_t *len)
+{
+	struct screen		*s = &wp->base;
+	struct grid		*gd = s->grid;
+	struct grid_cell		*gc = NULL;
+	const struct grid_line	*gl;
+	char			*buf, *line, *rendition, hex[3];
+	u_int			 i, top, bottom;
+	size_t			 j;
+
+	buf = cmd_whisp_capture_pane_append(NULL, len,
+	    "whisp-replay-v1\t", sizeof "whisp-replay-v1\t" - 1);
+	rendition = grid_string_rendition(input_current_cell(wp->ictx));
+	for (j = 0; rendition[j] != '\0'; j++) {
+		xsnprintf(hex, sizeof hex, "%02x", (u_char)rendition[j]);
+		buf = cmd_whisp_capture_pane_append(buf, len, hex, 2);
+	}
+	free(rendition);
+	buf = cmd_whisp_capture_pane_append(buf, len, "\n", 1);
+	cmd_whisp_capture_pane_grid_range(args, item, gd, &top, &bottom);
+	for (i = top; i <= bottom; i++) {
+		gl = grid_peek_line(gd, i);
+		line = grid_string_cells(gd, 0, i, screen_size_x(s), &gc,
+		    GRID_STRING_WITH_SEQUENCES, s);
+		buf = cmd_whisp_capture_pane_append(buf, len, line, strlen(line));
+		if (!(gl->flags & GRID_LINE_WRAPPED))
+			buf = cmd_whisp_capture_pane_append(buf, len, "\n", 1);
+		free(line);
+	}
+	return (buf);
+}
+
 static enum cmd_retval
 cmd_whisp_capture_pane_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -336,6 +376,18 @@ cmd_whisp_capture_pane_exec(struct cmd *self, struct cmdq_item *item)
 	anchor_mode = args_has(args, 'A') || args_has(args, 'B');
 	line_mode = args_has(args, 'L') || args_has(args, 'S') ||
 	    args_has(args, 'E');
+
+	if (args_has(args, 'R')) {
+		if (anchor_mode || args_has(args, 'L') || args_has(args, 'n') ||
+		    args_has(args, 'C') || args_has(args, 'e') ||
+		    args_has(args, 'J') || args_has(args, 'N') ||
+		    args_has(args, 'T') || args_has(args, 'q')) {
+			cmdq_error(item, "-R accepts only -S, -E and -t");
+			return (CMD_RETURN_ERROR);
+		}
+		buf = cmd_whisp_capture_pane_replay(args, item, wp, &len);
+		return (cmd_whisp_capture_pane_print(item, buf, len));
+	}
 
 	if (!anchor_mode) {
 		if (!args_has(args, 'L')) {

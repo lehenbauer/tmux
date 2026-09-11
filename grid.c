@@ -1079,6 +1079,22 @@ grid_string_cells_code(const struct grid_cell *lastgc,
 	}
 }
 
+/* A standalone rendition restore, independent of the receiver's SGR state. */
+char *
+grid_string_rendition(const struct grid_cell *gc)
+{
+	struct grid_cell cell = *gc;
+	char	 code[8192], *result;
+	int	 has_link = 0;
+
+	/* Charset designation/shift state is not SGR. */
+	cell.attr &= ~GRID_ATTR_CHARSET;
+	grid_string_cells_code(&grid_default_cell, &cell, code, sizeof code,
+	    0, NULL, &has_link);
+	xasprintf(&result, "\033[0m%s", code);
+	return (result);
+}
+
 /* Convert cells into a string. */
 char *
 grid_string_cells(struct grid *gd, u_int px, u_int py, u_int nx,

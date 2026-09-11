@@ -36,7 +36,7 @@
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
-#define WHISP_TMUX_PROTOCOL_VERSION 8
+#define WHISP_TMUX_PROTOCOL_VERSION 9
 
 extern char   **environ;
 
@@ -3197,6 +3197,7 @@ struct input_ctx *input_init(struct window_pane *, struct bufferevent *,
 	     struct colour_palette *, struct client *);
 void	 input_free(struct input_ctx *);
 void	 input_reset(struct input_ctx *, int);
+const struct grid_cell *input_current_cell(struct input_ctx *);
 struct evbuffer *input_pending(struct input_ctx *);
 void	 input_parse_pane(struct window_pane *);
 void	 input_parse_buffer(struct window_pane *, const u_char *, size_t);
@@ -3265,6 +3266,7 @@ void	 grid_clear(struct grid *, u_int, u_int, u_int, u_int, u_int);
 void	 grid_clear_lines(struct grid *, u_int, u_int, u_int);
 void	 grid_move_lines(struct grid *, u_int, u_int, u_int, u_int);
 void	 grid_move_cells(struct grid *, u_int, u_int, u_int, u_int, u_int);
+char	*grid_string_rendition(const struct grid_cell *);
 char	*grid_string_cells(struct grid *, u_int, u_int, u_int,
 	     struct grid_cell **, int, struct screen *);
 void	 grid_duplicate_lines(struct grid *, u_int, struct grid *, u_int,
