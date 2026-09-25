@@ -162,6 +162,9 @@ echo "PASS failed respawn without -k"
 # -- commands that read the pane parser or pty state -----------------------
 $TMUX capture-pane -p -t"$TARGET" >/dev/null || fail "capture-pane"
 $TMUX capture-pane -p -e -t"$TARGET" >/dev/null || fail "capture-pane -e"
+$TMUX capture-pane -p -P -t"$TARGET" >/dev/null || fail "capture-pane -P"
+$TMUX whisp-reset-pane -t"$TARGET" || fail "whisp-reset-pane"
+$TMUX whisp-reset-pane -H -t"$TARGET" || fail "whisp-reset-pane -H"
 $TMUX whisp-capture-pane -R -t"$TARGET" >/dev/null ||
     fail "whisp-capture-pane -R"
 $TMUX send-keys -R -t"$TARGET" || fail "send-keys -R"
@@ -170,7 +173,7 @@ $TMUX resize-pane -t"$TARGET" -x 60 2>/dev/null
 $TMUX display-message -p -t"$TARGET" '#{pane_pid} #{pane_dead} #{pane_tty}' \
     >/dev/null || fail "display-message"
 alive || fail "server died on commands against the failed pane"
-echo "PASS capture/send-keys/display on failed pane"
+echo "PASS capture (-e, -P)/whisp-reset-pane (soft, -H)/send-keys/display on failed pane"
 
 # The unrelated pane was never disturbed.
 [ "$($TMUX display-message -p -t"$OTHER" '#{pane_dead} #{pane_pid}')" = \
