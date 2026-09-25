@@ -255,6 +255,7 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		}
 		if (sc->wp0->fd != -1) {
 			bufferevent_free(sc->wp0->event);
+			sc->wp0->event = NULL;
 			close(sc->wp0->fd);
 		}
 		window_pane_reset_mode_all(sc->wp0);
@@ -396,6 +397,16 @@ spawn_pane(struct spawn_context *sc, char **cause)
 			server_client_remove_pane(new_wp);
 			layout_close_pane(new_wp);
 			window_remove_pane(w, new_wp);
+		} else {
+			/*
+			 * The respawn already released the old pty, event and
+			 * parser but the pane is kept. Leave it like a pane
+			 * whose process has exited (see server_destroy_pane):
+			 * no pty or event, but a valid parser, so a further
+			 * respawn or any command reading the parser works.
+			 */
+			new_wp->ictx = input_init(new_wp, NULL,
+			    &new_wp->palette, NULL);
 		}
 		sigprocmask(SIG_SETMASK, &oldset, NULL);
 		environ_free(child);
